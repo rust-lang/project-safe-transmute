@@ -524,13 +524,13 @@ pub struct Foo(pub Bar, pub Baz);
 const _: () = {
 
     #[repr(C)]
-    struct TransmutableFromArchetype
+    struct TransmutableFromArchetype(
         <Bar as PromiseTransmutableFrom>::Archetype,
         <Baz as PromiseTransmutableFrom>::Archetype,
     );
 
     #[repr(C)]
-    struct TransmutableIntoArchetype
+    struct TransmutableIntoArchetype(
         <Bar as PromiseTransmutableInto>::Archetype,
         <Baz as PromiseTransmutableInto>::Archetype,
     );
@@ -661,13 +661,13 @@ In the above definitions, `Src` represents the source type of the transmutation,
 ### Neglecting Static Checks
 [options]: #Neglecting-Static-Checks
 
-The default value of the `Neglect` parameter, `()`, statically forbids transmutes that are unsafe, unsafe, or unstable. However, you may explicitly opt-out of some static checks:
+The default value of the `Neglect` parameter, `()`, statically forbids transmutes that are unsafe, unsound, or unstable. However, you may explicitly opt-out of some static checks:
 
 | Transmute Option    | Compromises | Usable With                                             |
 |---------------------|-------------|---------------------------------------------------------|
 | `NeglectStabilty`   | Stability   | `transmute_{from,into}`, `unsafe_transmute_{from,into}` |
 | `NeglectAlignment`  | Safety      | `unsafe_transmute_{from,into}`                          |
-| `NeglectValidity`   | Soudness    | `unsafe_transmute_{from,into}`                          |
+| `NeglectValidity`   | Soundness   | `unsafe_transmute_{from,into}`                          |
 
 `NeglectStabilty` implements the `SafeTransmuteOptions` and `UnsafeTransmuteOptions` marker traits, as it can be used in both safe and unsafe code. The selection of multiple options is encoded by grouping them as a tuple; e.g., `(NeglectAlignment, NeglectValidity)` is a selection of both the `NeglectAlignment` and `NeglectValidity` options.
 
