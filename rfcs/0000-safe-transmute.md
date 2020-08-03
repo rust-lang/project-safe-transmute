@@ -520,26 +520,32 @@ This expands to:
 #[repr(C)]
 pub struct Foo(pub Bar, pub Baz);
 
-// Generated stability declarations for `Foo`:
+/// Generated `PromiseTransmutableFrom` for `Foo`
 const _: () = {
+    use core::transmute::stability::PromiseTransmutableFrom;
 
     #[repr(C)]
-    struct TransmutableFromArchetype(
-        <Bar as PromiseTransmutableFrom>::Archetype,
-        <Baz as PromiseTransmutableFrom>::Archetype,
-    );
-
-    #[repr(C)]
-    struct TransmutableIntoArchetype(
-        <Bar as PromiseTransmutableInto>::Archetype,
-        <Baz as PromiseTransmutableInto>::Archetype,
+    pub struct TransmutableFromArchetype(
+        pub <Bar as PromiseTransmutableFrom>::Archetype,
+        pub <Baz as PromiseTransmutableFrom>::Archetype,
     );
 
     impl PromiseTransmutableFrom for Foo {
         type Archetype = TransmutableFromArchetype;
     }
+};
 
-    impl PromiseTransmutableInto for FooTransmutableIntoArchetype {
+/// Generated `PromiseTransmutableInto` for `Foo`
+const _: () = {
+    use core::transmute::stability::PromiseTransmutableInto;
+
+    #[repr(C)]
+    pub struct TransmutableIntoArchetype(
+        pub <Bar as PromiseTransmutableInto>::Archetype,
+        pub <Baz as PromiseTransmutableInto>::Archetype,
+    );
+
+    impl PromiseTransmutableInto for Foo {
         type Archetype = TransmutableIntoArchetype;
     }
 };
