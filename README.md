@@ -15,7 +15,7 @@ support safe transmute
 - [Technical items on our roadmap](planning/roadmap/)
 
 [shepherds-blog]: http://smallcultfollowing.com/babysteps/blog/2019/09/11/aic-shepherds-3-0/
-[zulip-room]:
+[zulip-room]: https://rust-lang.zulipchat.com/#narrow/stream/216762-project-safe-transmute
 
 # Contributing
 
