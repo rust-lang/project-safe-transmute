@@ -267,14 +267,14 @@ let _ : Packed = Padded::default().transmute_into(); // Compile Error!
 
 It's completely sound to transmute into a type with fewer bytes than the source type; e.g.:
 ```rust
-let _ : [u8; 16] = [0u8; 32]::default().transmute_into();
+let _ : [u8; 16] = [u8; 32]::default().transmute_into();
 ```
 This transmute truncates away the final sixteen bytes of the `[u8; 32]` value.
 
 A value may ***not*** be transmuted into a type of greater size, if doing so would expose uninitialized bytes as initialized:
 ```rust
 /* ⚠️ This example intentionally does not compile. */
-let _ : [u8; 32] = [0u8; 16]::default().transmute_into(); // Compile Error!
+let _ : [u8; 32] = [u8; 16]::default().transmute_into(); // Compile Error!
 ```
 
 #### Requirements on References
