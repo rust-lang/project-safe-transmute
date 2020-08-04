@@ -374,88 +374,90 @@ let p = Point { x: 4, y: 2 };
      // ^^^^^^^^^^^^^^^^^^^^ An instance of `Point` is created here, via its implicit constructor.
 ```
 
-Limiting implicit constructability is the fundamental mechanism with which type authors build safe abstractions for `unsafe` code, whose soundness is dependent on preserving invariants on fields. Usually, this takes the form of restricting the visibility of fields. For instance, consider the type `Constrained`, which enforces a validity constraint on its fields via its constructor:
+Limiting implicit constructability is the fundamental mechanism with which type authors build safe abstractions for `unsafe` code, whose soundness is dependent on preserving invariants on fields. Usually, this takes the form of restricting the visibility of fields. For instance, consider the type `NonEmptySlice`, which enforces a validity constraint on its fields via its constructor:
 
 ```rust
 pub mod crate_a {
 
     #[repr(C)]
-    pub struct Constrained {
-        wizz: i8,
-        bang: u8,
+    pub struct NonEmptySlice<T> {
+        data: *const T,
+        len: usize,
     }
 
-    impl Constrained {
-        /// the sum of `wizz` and `bang` must be greater than or equal to zero.
-        pub fn new(wizz: i8, bang: u8) -> Self {
-            assert!((wizz as i16) + (bang as i16) >= 0);
-            Constrained { wizz, bang }
+    impl<T> NonEmptySlice<T> {
+        pub fn from_array<const N: usize>(arr: &[T; N], len: usize) -> Self {
+            assert!(len <= N);
+            assert!(len > 0);
+            Self {
+                data: arr as *const T,
+                len,
+            }
         }
 
-        pub fn something_dangerous(&self) {
-            unsafe {
-                // do something that's only memory-safe if `wizz + bang >= 0`
-            }
+        pub fn first(&self) -> &T {
+            unsafe { &*self.data }
         }
     }
 
 }
 ```
-The only reason it is sound for `something_dangerous` to be a *safe* method is because the fields `wizz` and `bang` are *not* marked `pub`: outside of `crate_a`, it is impossible to safely initialize these fields in a way that violates the invariant enforced by `Constrained::new`. In other words, `Constrained` is implicitly constructable within `crate_a`, but *not* outside of `crate_a`. Any field that is not marked `pub` of a type should be assumed to be subject to validity invariants that could impact the safety of using that type.
+It is sound for `first` to be a *safe* method is because the `from_array` constructor ensures that `data` is safe to dereference, and because `from_array` is the *only* way to safely initialize `NonEmptySlice` outside of `crate_a` (note that `NonEmptySlice`'s fields are *not* `pub`). As a rule: any field that is not marked `pub` should be assumed to be private *because* it is subject to safety invariants.
 
-Unfortunately, field visibility modifiers are not a surefire indicator of whether a type is *fully* implicitly constructable. A type author may restrict the implicit constructability of a type even in situations where all fields of that type *and all fields of those fields) are `pub`; consider:
+Unfortunately, field visibility modifiers are not a surefire indicator of whether a type is *fully* implicitly constructable. A type author may restrict the implicit constructability of a type even in situations where all fields of that type (*and all fields of those fields*) are `pub`; consider:
 ```rust
 pub mod crate_a {
 
     #[repr(C)]
-    pub struct Constrained(pub private::ConstrainedInner);
+    pub struct NonEmptySlice<T>(pub private::NonEmptySliceInner<T>);
 
-    impl Constrained {
-        /// the sum of `wizz` and `bang` must be greater than or equal to zero.
-        pub fn new(wizz: i8, bang: u8) -> Self {
-            assert!((wizz as i16) + (bang as i16) >= 0);
-            Constrained(private::ConstrainedInner { wizz, bang })
+    impl<T> NonEmptySlice<T> {
+        pub fn from_array<const N: usize>(arr: &[T; N], len: usize) -> Self {
+            assert!(len <= N && len > 0);
+            Self(
+                private::NonEmptySliceInner {
+                    data: arr as *const T,
+                    len,
+                }
+            )
         }
 
-        pub fn something_dangerous(&self) {
-            unsafe {
-                // do something that's only safe if `self.0.wizz + self.0.bang >= 0`
-            }
+        pub fn first(&self) -> &T {
+            unsafe { &*self.0.data }
         }
     }
 
     // introduce a private module to avoid `private_in_public` error (E0446):
     pub(crate) mod private {
-        /// the sum of `wizz` and `bang` MUST be greater than or equal to zero.
         #[repr(C)]
-        pub struct ConstrainedInner {
-            pub wizz: i8,
-            pub bang: u8,
+        pub struct NonEmptySliceInner<T> {
+            pub data: *const T,
+            pub len: usize,
         }
     }
 
 }
 ```
-In the above example, the definitions of both `Constrained` and its field `ConstrainedInner` are marked `pub`. All fields of both types are marked `pub`. However, `Constrained` is *not* fully implicitly constructible outside of `crate_a`, because the module containing `ConstrainedInner` is not visibile outside of `crate_a`.
+In the above example, the definitions of both `NonEmptySlice` and its field `NonEmptySliceInner` are marked `pub`, and all fields of these types are marked `pub`. However, `NonEmptySlice` is *not* fully implicitly constructible outside of `crate_a`, because the module containing `NonEmptySliceInner` is not visibile outside of `crate_a`.
 
 #### Constructability and Transmutation
 Transmutation supplies a mechanism for constructing instances of a type *without* invoking its implicit constructor, nor any constructors defined by the type's author.
 
-In the previous examples, it would be *unsafe* to transmute `0xFF00u16` into `Constrained` outside `crate_a`, because subsequent *safe* use of that value (namely, calling `something_dangerous`) could violate memory safety. (However, it's completely safe to transmute `Constrained` into `0xFF00u16`.)
-
+In the previous examples, it would be *unsafe* to transmute `0u128` into `NonEmptySlice` outside `crate_a`, because subsequent *safe* use of that value (namely, calling `first`) would memory safety. (However, it's completely safe to transmute `NonEmptySlice` into a `u128`.)
 
 For transmutations where the destination type involves mutate-able references, the constructability of the source type is also relevant. Consider:
 ```rust
 /* ⚠️ This example intentionally does not compile. */
-let mut x = Constrained::new(0, 0);
+let arr = [0u8, 1u8, 2u8];
+let mut x = NonEmptySlice::from_array(&arr, 2);
 {
-    let y : &mut u16 = (&mut x).transmute_into(); // Compile Error!
-    *y = 0xFF00u16;
+    let y : &mut u128 = (&mut x).transmute_into(); // Compile Error!
+    *y = 0u128;
 }
 
-let z : Constrained = x;
+let z : NonEmptySlice<u8> = x;
 ```
-If this example did not produce a compile error, the value of `z` would not be a safe instance of its type, `Constrained`.
+If this example did not produce a compile error, the value of `z` would not be a safe instance of its type, `NonEmptySlice`, because `z.first()` would dereference a null pointer.
 
 ### 📖 When is a transmutation stable?
 [stability]: #When-is-a-transmutation-stable
@@ -864,44 +866,45 @@ This definition is *usually* sufficient for ensuring safety: it is *generally* a
 pub mod crate_a {
 
     #[repr(C)]
-    pub struct Constrained(pub private::ConstrainedInner);
+    pub struct NonEmptySlice<T>(pub private::NonEmptySliceInner<T>);
 
-    impl Constrained {
-        /// the sum of `wizz` and `bang` must be greater than or equal to zero.
-        pub fn new(wizz: i8, bang: u8) -> Self {
-            assert!((wizz as i16) + (bang as i16) >= 0);
-            Constrained(private::ConstrainedInner { wizz, bang })
+    impl<T> NonEmptySlice<T> {
+        pub fn from_array<const N: usize>(arr: &[T; N], len: usize) -> Self {
+            assert!(len <= N && len > 0);
+            Self(
+                private::NonEmptySliceInner {
+                    data: arr as *const T,
+                    len,
+                }
+            )
         }
 
-        pub fn something_dangerous(&self) {
-            unsafe {
-                // do something that's only safe if `self.0.wizz + self.0.bang >= 0`
-            }
+        pub fn first(&self) -> &T {
+            unsafe { &*self.0.data }
         }
     }
 
     // introduce a private module to avoid `private_in_public` error (E0446):
     pub(crate) mod private {
-        /// the sum of `wizz` and `bang` MUST be greater than or equal to zero.
         #[repr(C)]
-        pub struct ConstrainedInner {
-            pub wizz: i8,
-            pub bang: u8,
+        pub struct NonEmptySliceInner<T> {
+            pub data: *const T,
+            pub len: usize,
         }
     }
 
 }
 ```
-With this simplified definition of constructability, it is possible for a third-party to define a *safe* constructor of `Constrained` that produces a value is *unsafe* to use:
+With this simplified definition of constructability, it is possible for a third-party to define a *safe* constructor of `NonEmptySlice` that produces a value which is *unsafe* to use:
 ```rust
-pub evil_constructor<T>(src: T) -> Constrained
+pub evil_constructor<T>(src: T) -> NonEmptySlice<u8>
 where
-    T: TransmuteInto<Constrained, NeglectStability>,
+    T: TransmuteInto<NonEmptySlice<u8>, NeglectStability>,
 {
     src.transmute_into()
 }
 
-evil_constructor(0xFF_00u16).something_dangerous() // muahaha!
+evil_constructor(0u128).first() // muahaha!
 ```
 
 The above code is "safe" because our simplified definition of constructability fails to recognize this pattern of encapsulation, and because `NeglectStability` is a `SafeTransmutationOption`.
@@ -913,12 +916,12 @@ By temporarily sacrificing these goals, we may preserve safety solely...
 ##### ...at the Cost of `NeglectStability`
 We may preserve safety by demoting `NeglectStability` to `UnsafeTransmutationOption`-status.
 
-In doing so, a third-party is forced to resort to an `unsafe` transmutation to construct `Constrained`; e.g.:
+In doing so, a third-party is forced to resort to an `unsafe` transmutation to construct `NonEmptySlice`; e.g.:
 
 ```rust
-pub evil_constructor<T>(src: T) -> Constrained
+pub evil_constructor<T>(src: T) -> NonEmptySlice<u8>
 where
-    T: TransmuteInto<Constrained, NeglectStability>,
+    T: TransmuteInto<NonEmptySlice<u8>, NeglectStability>,
 {
     // unsafe because we `NeglectStability`
     unsafe { src.unsafe_transmute_into() }
@@ -931,47 +934,48 @@ pub mod crate_a {
 
     #[derive(PromiseTransmutableFrom)]
     #[repr(C)]
-    pub struct Constrained(pub private::ConstrainedInner);
+    pub struct NonEmptySlice<T>(pub private::NonEmptySliceInner<T>);
 
-    impl Constrained {
-        /// the sum of `wizz` and `bang` must be greater than or equal to zero.
-        pub fn new(wizz: i8, bang: u8) -> Self {
-            assert!((wizz as i16) + (bang as i16) >= 0);
-            Constrained(private::ConstrainedInner { wizz, bang })
+    impl<T> NonEmptySlice<T> {
+        pub fn from_array<const N: usize>(arr: &[T; N], len: usize) -> Self {
+            assert!(len <= N && len > 0);
+            Self(
+                private::NonEmptySliceInner {
+                    data: arr as *const T,
+                    len,
+                }
+            )
         }
 
-        pub fn something_dangerous(&self) {
-            unsafe {
-                // do something that's only safe if `self.0.wizz + self.0.bang >= 0`
-            }
+        pub fn first(&self) -> &T {
+            unsafe { &*self.0.data }
         }
     }
 
     // introduce a private module to avoid `private_in_public` error (E0446):
     pub(crate) mod private {
-        /// the sum of `wizz` and `bang` MUST be greater than or equal to zero.
         #[derive(PromiseTransmutableFrom)]
         #[repr(C)]
-        pub struct ConstrainedInner {
-            pub wizz: i8,
-            pub bang: u8,
+        pub struct NonEmptySliceInner<T> {
+            pub data: *const T,
+            pub len: usize,
         }
     }
 
 }
 ```
-In the above example, the type author declares `Constrained` and `ConstrainedInner` to be stably instantiatable via transmutation. Given this, a third-party no longer needs to resort to `unsafe` code to violate the the invariants on `wizz` and `bang`:
+In the above example, the type author declares `NonEmptySlice` and `NonEmptySliceInner` to be stably instantiatable via transmutation. Given this, a third-party no longer needs to resort to `unsafe` code to violate the the invariants on `inner`:
 ```rust
-pub evil_constructor<T>(src: T) -> Constrained
+pub evil_constructor<T>(src: T) -> NonEmptySlice<u8>
 where
-    T: TransmuteInto<Constrained>,
+    T: TransmuteInto<NonEmptySlice<u8>>,
 {
     src.transmute_into()
 }
 
-evil_constructor(0xFF_00u16).something_dangerous() // muahaha!
+evil_constructor(0u128).first() // muahaha!
 ```
-This safety hazard is not materially different from the one that would be induced if the type author implemented `DerefMut<Target=ConstrainedInner>` for `Constrained`, or made the `private` module `pub`, or otherwise provided mutable access to `wizz` and `bang`.
+This safety hazard is not materially different from the one that would be induced if the type author implemented `DerefMut<Target=NonEmptySliceInner>` for `NonEmptySlice`, or made the `private` module `pub`, or otherwise explicitly provided outsiders with unrestricted mutable access to `data`.
 
 ##### Recommendation
 We recommend that that implementers of this RFC initially simplify constructability by:
