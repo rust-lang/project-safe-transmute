@@ -1712,7 +1712,7 @@ Some [prior art][prior-art], especially in the crate ecosystem, provides an API 
 The API advocated by this proposal is unopinionated about what transmutations users might wish to do, and what transmutations the compiler is able to reason about. The implementation of this RFC may be initially very simple (and perhaps support no more than the restrictive approaches allow for), but then subsequently grow in sophistication—*without* necessitating public API changes.
 
 ### Why *two* traits?
-If `TransmuteInto` is implemented in terms of `TransmuteFrom`, why provide it at all? We do so for consistency with libcore's [`From`/`Into`](https://doc.rust-lang.org/stable/rust-by-example/conversion/from_into.html) traits, and because directionality conveys intent: `TransmuteInto` connotes *conversion*, whereas `TransmuteInto` connotes initialization. We believe that the supporting code examples of this RFC demonstrate the explanatory benefits of providing *both* traits.
+If `TransmuteInto` is implemented in terms of `TransmuteFrom`, why provide it at all? We do so for consistency with libcore's [`From`/`Into`](https://doc.rust-lang.org/stable/rust-by-example/conversion/from_into.html) traits, and because directionality conveys intent: `TransmuteFrom` connotes *conversion*, whereas `TransmuteInto` connotes initialization. We believe that the supporting code examples of this RFC demonstrate the explanatory benefits of providing *both* traits.
 
 ## Rationale: Transmutation Options
 
