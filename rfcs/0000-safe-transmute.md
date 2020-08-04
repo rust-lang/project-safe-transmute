@@ -16,20 +16,21 @@ use core::transmute::{
     stability::{PromiseTransmutableInto, PromiseTransmutableFrom},
 };
 
-#[derive(PromiseTransmutableInto, PromiseTransmutableFrom)]
+#[derive(PromiseTransmutableInto, PromiseTransmutableFrom)] // declare `Foo` to be *stably* transmutable
 #[repr(C)]
 pub struct Foo(pub u8, pub u16);
-//                   ^ there's a padding byte here
+//                    ^ there's a padding byte here, between these fields
 
 // Transmute fearlessly!
 let _ : Foo = 64u32.transmute_into(); // Alchemy Achieved!
+//                  ^^^^^^^^^^^^^^ provided by the `TransmuteInto` trait
 
 let _ : u32 = Foo(16, 12).transmute_into(); // Compile Error!
 
 // error[E0277]: the trait bound `u32: TransmuteFrom<foo::Foo, _>` is not satisfied
-//   --> src/demo.rs:14:27
+//   --> src/demo.rs:15:27
 //    |
-// 14 | let _ : u32 = Foo(16, 12).transmute_into(); // Compile Error!
+// 15 | let _ : u32 = Foo(16, 12).transmute_into(); // Compile Error!
 //    |                           ^^^^^^^^^^^^^^ the trait `TransmuteFrom<foo::Foo, _>` is not implemented for `u32`
 //    |
 //   = note: required because of the requirements on the impl of `TransmuteInto<u32, _>` for `foo::Foo`
