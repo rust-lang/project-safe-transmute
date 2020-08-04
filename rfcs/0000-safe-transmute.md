@@ -83,11 +83,11 @@ fn main() {
     }
 }
 ```
-This pattern, Kelly notes, is common when interacting with operating system APIs.
+This pattern, Kelley notes, is common when interacting with operating system APIs.
 
 This rust program compiles, but quietly introduces undefined behavior. `Foo` requires stricter in-memory alignment than `u8`. The equivalent code in Zig produces a compiler error for this reason and requires modification.
 
-And that's not all: Kelly misses that the very layout of `Foo` itself is undefined⁠—it must be annotated with `#[repr(C)]`!
+And that's not all: Kelley misses that the very layout of `Foo` itself is undefined⁠—it must be annotated with `#[repr(C)]`!
 
 Kelley concludes:
 > In Zig the problem of alignment is solved completely; the compiler catches all possible alignment issues. In the situation where you need to assert to the compiler that something is more aligned than Zig thinks it is, you can use `@alignCast`. This inserts a cheap safety check in debug mode to make sure the alignment assertion is correct.
@@ -100,7 +100,7 @@ This RFC proposes mechanisms that use this information to enable safer transmuta
 ***TODO: Josh?***
 
 ## Safer Initialization Primitives
-The initialization primitives `mem::zeroed<T>` and `mem::uninitialized<T>` are `unsafe` because they may be used to initialized types for which zeroed or uninitialized memory are *not* valid bit-patterns. The `mem::zeroed` function recently gained a dynamically-enforced validity check, but this safety measure isn't wholly satisfactory: the validity properties of `T` are statically known, but the check is dynamic.
+The initialization primitives `mem::zeroed<T>` and `mem::uninitialized<T>` are `unsafe` because they may be used to initialize types for which zeroed or uninitialized memory are *not* valid bit-patterns. The `mem::zeroed` function recently gained a dynamically-enforced validity check, but this safety measure isn't wholly satisfactory: the validity properties of `T` are statically known, but the check is dynamic.
 
 This RFC proposes mechanisms that would allow these functions to explicitly bound their generic parameter `T` based on its validity properties. We revisit this motivating use-case with our proposed mechanisms near the end of this RFC, [*here*][future-possibility-safe-initialization].
 
@@ -1607,7 +1607,7 @@ Writing *both* impls (as we do above) is logically nonsense, but is nonetheless 
 ### Case Study: Making Unsafe Rust Safer
 [case-study-safer-unsafe]: #Case-Study-Making-Unsafe-Rust-Safer
 
-This RFC proposes mechanisms for safe transmutation and safer *unsafe* transmutation. How might [Kelly's motivating example][motivation-safer-unsafe] change in light of these mechanisms?
+This RFC proposes mechanisms for safe transmutation and safer *unsafe* transmutation. How might [Kelley's motivating example][motivation-safer-unsafe] change in light of these mechanisms?
 
 #### Safer Unsafe
 For the compiler to accept a use of `unsafe_transmute`, we must:
