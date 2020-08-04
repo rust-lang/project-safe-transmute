@@ -271,7 +271,7 @@ let _ : [u8; 16] = [0u8; 32]::default().transmute_into();
 ```
 This transmute truncates away the final sixteen bytes of the `[u8; 32]` value.
 
-A value may ***not*** be transmuted into a type of greater size:
+A value may ***not*** be transmuted into a type of greater size, if doing so would expose uninitialized bytes as initialized:
 ```rust
 /* ⚠️ This example intentionally does not compile. */
 let _ : [u8; 32] = [0u8; 16]::default().transmute_into(); // Compile Error!
@@ -283,11 +283,25 @@ let _ : [u8; 32] = [0u8; 16]::default().transmute_into(); // Compile Error!
 The [restrictions above that apply to transmuting owned values][transmute-owned] also apply to transmuting references. However, references carry a few additional restrictions.
 
 A [sound transmutation] must:
+ - [preserve or shrink size][reference-size],
  - [preserve or relax alignment][reference-alignment],
  - [preserve or shrink lifetimes][reference-lifetimes],
  - [preserve or shrink uniqueness][reference-mutability], and
  - and if the destination type is a mutate-able reference, [preserve validity][reference-validity].
 
+##### Preserve or Shrink Size
+[reference-size]: #Preserve-or-Shrink-Size
+
+You may preserve or decrease the size of the referent type via transmutation:
+```rust
+let _: &[u8; 3] = (&[0u8; 9]).transmute_into();
+```
+
+However, you may **not**, under any circumstances, *increase* the size of the referent type:
+```rust
+/* ⚠️ This example intentionally does not compile. */
+let _: &[u8; 9] = (&[0u8; 3]).transmute_into(); // Compile Error! 
+```
 ##### Preserve or Relax Alignment
 [reference-alignment]: #Preserve-or-Relax-Alignment
 
