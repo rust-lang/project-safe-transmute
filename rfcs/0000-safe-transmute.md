@@ -39,12 +39,12 @@ let _ : u32 = Foo(16, 12).transmute_into(); // Compile Error!
 # Motivation
 [motivation]: #motivation
 
-Beyond the titular goal of providing a mechanism of safe transmutation, this RFC seeks to provide mechanisms which:
- - [authoritatively codify language layout guarantees](#codifying-language-layout-guarantees)
- - [allow crate authors to codify their types' layout stability guarantees](#expressing-library-layout-guarantees)
- - [allow crate authors to codify their abstractions' layout requirements](#expressing-layout-requirements)
+We foresee a range of practical consequences of fulfilling these goals, including [making unsafe Rust safer](#making-unsafe-rust-safer), providing [safer initialization primitives](#safer-initialization-primitives), and [generic atomics](#atomict). We explore these use-cases, and more, in this section.
 
-We foresee a range of practical consequences of fulfilling these goals, including [making unsafe Rust safer](#making-unsafe-rust-safer), providing [safer initialization primitives](#safer-initialization-primitives), and [generic atomics](#atomict). We explore these possibilities, and more, in this section.
+A *comprehensive* approach to safe transmutation provides benefits beyond the mere act of transmutation; namely:
+ - [authoritatively codifies language layout guarantees](#codifying-language-layout-guarantees)
+ - [allows crate authors to codify their types' layout stability guarantees](#expressing-library-layout-guarantees)
+ - [allows crate authors to codify their abstractions' layout requirements](#expressing-layout-requirements)
 
 ## Codifying Language Layout Guarantees
 Documentation of Rust's layout guarantees for a type are often spread across countless issues, pull requests, RFCs and various official resources. It can be very difficult to get a straight answer. When transmutation is involved, users must reason about the *combined* layout properties of the source and destination types.
