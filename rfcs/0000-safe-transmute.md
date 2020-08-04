@@ -380,22 +380,24 @@ Limiting implicit constructability is the fundamental mechanism with which type 
 pub mod crate_a {
 
     #[repr(C)]
-    pub struct NonEmptySlice<T> {
+    pub struct NonEmptySlice<'a, T> {
         data: *const T,
         len: usize,
+        lifetime: core::marker::PhantomData<&'a ()>,
     }
 
-    impl<T> NonEmptySlice<T> {
-        pub fn from_array<const N: usize>(arr: &[T; N], len: usize) -> Self {
+    impl<'a, T> NonEmptySlice<'a, T> {
+        pub fn from_array<const N: usize>(arr: &'a [T; N], len: usize) -> Self {
             assert!(len <= N);
             assert!(len > 0);
             Self {
                 data: arr as *const T,
                 len,
+                lifetime: core::marker::PhantomData,
             }
         }
 
-        pub fn first(&self) -> &T {
+        pub fn first(&self) -> &'a T {
             unsafe { &*self.data }
         }
     }
@@ -409,20 +411,21 @@ Unfortunately, field visibility modifiers are not a surefire indicator of whethe
 pub mod crate_a {
 
     #[repr(C)]
-    pub struct NonEmptySlice<T>(pub private::NonEmptySliceInner<T>);
+    pub struct NonEmptySlice<'a, T>(pub private::NonEmptySliceInner<'a, T>);
 
-    impl<T> NonEmptySlice<T> {
-        pub fn from_array<const N: usize>(arr: &[T; N], len: usize) -> Self {
+    impl<'a, T> NonEmptySlice<'a, T> {
+        pub fn from_array<const N: usize>(arr: &'a [T; N], len: usize) -> Self {
             assert!(len <= N && len > 0);
             Self(
                 private::NonEmptySliceInner {
                     data: arr as *const T,
                     len,
+                    lifetime: core::marker::PhantomData,
                 }
             )
         }
 
-        pub fn first(&self) -> &T {
+        pub fn first(&self) -> &'a T {
             unsafe { &*self.0.data }
         }
     }
@@ -430,9 +433,10 @@ pub mod crate_a {
     // introduce a private module to avoid `private_in_public` error (E0446):
     pub(crate) mod private {
         #[repr(C)]
-        pub struct NonEmptySliceInner<T> {
+        pub struct NonEmptySliceInner<'a, T> {
             pub data: *const T,
             pub len: usize,
+            pub lifetime: core::marker::PhantomData<&'a ()>,
         }
     }
 
@@ -866,20 +870,21 @@ This definition is *usually* sufficient for ensuring safety: it is *generally* a
 pub mod crate_a {
 
     #[repr(C)]
-    pub struct NonEmptySlice<T>(pub private::NonEmptySliceInner<T>);
+    pub struct NonEmptySlice<'a, T>(pub private::NonEmptySliceInner<'a, T>);
 
-    impl<T> NonEmptySlice<T> {
-        pub fn from_array<const N: usize>(arr: &[T; N], len: usize) -> Self {
+    impl<'a, T> NonEmptySlice<'a, T> {
+        pub fn from_array<const N: usize>(arr: &'a [T; N], len: usize) -> Self {
             assert!(len <= N && len > 0);
             Self(
                 private::NonEmptySliceInner {
                     data: arr as *const T,
                     len,
+                    lifetime: core::marker::PhantomData,
                 }
             )
         }
 
-        pub fn first(&self) -> &T {
+        pub fn first(&self) -> &'a T {
             unsafe { &*self.0.data }
         }
     }
@@ -887,9 +892,10 @@ pub mod crate_a {
     // introduce a private module to avoid `private_in_public` error (E0446):
     pub(crate) mod private {
         #[repr(C)]
-        pub struct NonEmptySliceInner<T> {
+        pub struct NonEmptySliceInner<'a, T> {
             pub data: *const T,
             pub len: usize,
+            pub lifetime: core::marker::PhantomData<&'a ()>,
         }
     }
 
@@ -897,9 +903,9 @@ pub mod crate_a {
 ```
 With this simplified definition of constructability, it is possible for a third-party to define a *safe* constructor of `NonEmptySlice` that produces a value which is *unsafe* to use:
 ```rust
-pub evil_constructor<T>(src: T) -> NonEmptySlice<u8>
+pub evil_constructor<T>(src: T) -> NonEmptySlice<'static, u8>
 where
-    T: TransmuteInto<NonEmptySlice<u8>, NeglectStability>,
+    T: TransmuteInto<NonEmptySlice<'static, u8>, NeglectStability>,
 {
     src.transmute_into()
 }
@@ -919,9 +925,9 @@ We may preserve safety by demoting `NeglectStability` to `UnsafeTransmutationOpt
 In doing so, a third-party is forced to resort to an `unsafe` transmutation to construct `NonEmptySlice`; e.g.:
 
 ```rust
-pub evil_constructor<T>(src: T) -> NonEmptySlice<u8>
+pub evil_constructor<T>(src: T) -> NonEmptySlice<'static, u8>
 where
-    T: TransmuteInto<NonEmptySlice<u8>, NeglectStability>,
+    T: TransmuteInto<NonEmptySlice<'static, u8>, NeglectStability>,
 {
     // unsafe because we `NeglectStability`
     unsafe { src.unsafe_transmute_into() }
@@ -934,20 +940,21 @@ pub mod crate_a {
 
     #[derive(PromiseTransmutableFrom)]
     #[repr(C)]
-    pub struct NonEmptySlice<T>(pub private::NonEmptySliceInner<T>);
+    pub struct NonEmptySlice<'a, T>(pub private::NonEmptySliceInner<'a, T>);
 
-    impl<T> NonEmptySlice<T> {
-        pub fn from_array<const N: usize>(arr: &[T; N], len: usize) -> Self {
+    impl<'a, T> NonEmptySlice<'a, T> {
+        pub fn from_array<const N: usize>(arr: &'a [T; N], len: usize) -> Self {
             assert!(len <= N && len > 0);
             Self(
                 private::NonEmptySliceInner {
                     data: arr as *const T,
                     len,
+                    lifetime: core::marker::PhantomData,
                 }
             )
         }
 
-        pub fn first(&self) -> &T {
+        pub fn first(&self) -> &'a T {
             unsafe { &*self.0.data }
         }
     }
@@ -956,9 +963,10 @@ pub mod crate_a {
     pub(crate) mod private {
         #[derive(PromiseTransmutableFrom)]
         #[repr(C)]
-        pub struct NonEmptySliceInner<T> {
+        pub struct NonEmptySliceInner<'a, T> {
             pub data: *const T,
             pub len: usize,
+            pub lifetime: core::marker::PhantomData<&'a ()>,
         }
     }
 
@@ -966,9 +974,9 @@ pub mod crate_a {
 ```
 In the above example, the type author declares `NonEmptySlice` and `NonEmptySliceInner` to be stably instantiatable via transmutation. Given this, a third-party no longer needs to resort to `unsafe` code to violate the the invariants on `inner`:
 ```rust
-pub evil_constructor<T>(src: T) -> NonEmptySlice<u8>
+pub evil_constructor<T>(src: T) -> NonEmptySlice<'static, u8>
 where
-    T: TransmuteInto<NonEmptySlice<u8>>,
+    T: TransmuteInto<NonEmptySlice<'static, u8>>,
 {
     src.transmute_into()
 }
