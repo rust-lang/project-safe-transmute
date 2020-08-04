@@ -443,7 +443,7 @@ In the above example, the definitions of both `NonEmptySlice` and its field `Non
 #### Constructability and Transmutation
 Transmutation supplies a mechanism for constructing instances of a type *without* invoking its implicit constructor, nor any constructors defined by the type's author.
 
-In the previous examples, it would be *unsafe* to transmute `0u128` into `NonEmptySlice` outside `crate_a`, because subsequent *safe* use of that value (namely, calling `first`) would memory safety. (However, it's completely safe to transmute `NonEmptySlice` into a `u128`.)
+In the previous examples, it would be *unsafe* to transmute `0u128` into `NonEmptySlice` outside `crate_a`, because subsequent *safe* use of that value (namely, calling `first`) would violate memory safety. (However, it's completely safe to transmute `NonEmptySlice` into a `u128`.)
 
 For transmutations where the destination type involves mutate-able references, the constructability of the source type is also relevant. Consider:
 ```rust
