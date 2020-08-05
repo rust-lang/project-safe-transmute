@@ -1554,7 +1554,7 @@ The stability declaration traits communicate library layout stability, but not *
 - All pointer-related primitive types (`usize`, `isize`, `*const T`, `*mut T`, `&T`, `&mut T`) possess platform-dependent layouts; their sizes and alignments are well-defined, but vary between platforms. Concretely, whether `usize` is `TransmuteInto<[u8; 4]>` or `TransmuteInto<[u8; 8]>` will depend on  the platform.
 - The very existence of some types depends on platform, too; e.g., the contents of [`core::arch`](https://doc.rust-lang.org/stable/core/arch/), [`std::os`](https://doc.rust-lang.org/stable/std/os/), and [`core::sync::atomic`](https://doc.rust-lang.org/stable/std/sync/atomic/) all depend on platform.
 
-Expanding this RFC to address such types would introduce considerable additional complexity:
+Our proposed stability system is oblivious to the inter-platform variations of these types. Expanding our stability system to be aware of inter-platform variations would introduce considerable additional complexity:
 <ol>
 <li>
 
