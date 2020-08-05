@@ -2142,7 +2142,7 @@ pub fn recognize(input: &Matrix<f64, U1, U784>) -> usize
 /// aligned, as required by the destination type.
 pub fn try_cast_ref<'t, 'u, T, U>(src: &'t T) -> Option<&'u U>
 where
-    &'t T: UnsafeTransmuteInto<&'u U, neglect::Alignment>,
+    &'t T: UnsafeTransmuteInto<&'u U, NeglectAlignment>,
 {
     if (src as *const T as usize) % align_of::<U>() != 0 {
         None
