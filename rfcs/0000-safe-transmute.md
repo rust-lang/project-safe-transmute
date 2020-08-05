@@ -1024,6 +1024,7 @@ pub unsafe trait PromiseTransmutableInto
     type Archetype;
 }
 ```
+This section gives concrete examples of how misusing these simple, unsafe definitions can lead to unsoundness, and then refines them until they are immune to misuse (and, consequently, *safe*).
 
 ### Part 1: Towards Safety
 
