@@ -529,8 +529,9 @@ Why is this the case?
 
 The type `<Src as PromiseTransmutableInto>::Archetype` exemplifies the furthest extreme of non-breaking changes that could be made to the layout of `Src` that could affect its use as a source type in transmutations. Conversely, `<Dst as PromiseTransmutableFrom>::Archetype` exemplifies the furthest extreme of non-breaking changes that could be made to the layout of `Dst` that could affect its use as a destination type in transmutations. If a transmutation between these extremities is valid, then so is `Src: TransmuteInto<Dst>`.
 
-#### Common Use-Case: Promising a Fixed Layout
-To promise that type's layout is completely fixed, simply `derive` the `PromiseTransmutableFrom` and `PromiseTransmutableInto` traits:
+#### Common Use-Case: As-Stable-As-Possible
+[stability-common]: #common-use-case-as-stable-as-possible
+To promise that all transmutations which are currently safe for your type will remain so in the future, simply annotate your type with:
 ```rust
 #[derive(PromiseTransmutableFrom, PromiseTransmutableInto)]
 #[repr(C)]
@@ -571,9 +572,10 @@ const _: () = {
     }
 };
 ```
+Since deriving *both* of these traits together is, by far, the most common use-case, we [propose][extension-promisetransmutable-shorthand] `#[derive(PromiseTransmutable)]` as an ergonomic shortcut.
 
-
-#### Uncommon Use Case: Complex Stability Guarantees
+#### Uncommon Use-Case: Weak Stability Guarantees
+[stability-uncommon]: #uncommon-use-case-weak-stability-guarantees
 
 If you are *most people* and want to declare your types as layout-stable, you should follow the advice in the previous sections. In doing so, you declare that you will *not* modify the layout of your type in virtually any way, except as a breaking change. If your type's fields have simple stability guarantees, this effects the strongest possible declaration of stability: it declares that *all* transmutations that are safe are *also* stable.
 
@@ -1989,6 +1991,35 @@ The omission is intentional. The consequences of such an option are suprising in
 # Future possibilities
 [future-possibilities]: #future-possibilities
 
+## Extension: `PromiseTransmutable` Shorthand
+[extension-promisetransmutable-shorthand]: #extension-promisetransmutable-shorthand
+
+We anticipate that *most* users will merely want to [promise][stability-common] that their types are as-stable-as-possible. To do so, this RFC proposes the shorthand:
+```rust
+#[derive(PromiseTransmutableFrom, PromiseTransmutableInto)]
+#[repr(C)]
+pub struct Foo(pub Bar, pub Baz);
+```
+As a shorthand, this is still rather long. For such users, the separability of `PromiseTransmutableFrom` and `PromiseTransmutableInto` is totally irrelevant. We therefore propose a `derive(PromiseTransmutable)` shorthand, such that this:
+```rust
+#[derive(PromiseTransmutable)]
+#[repr(C)]
+pub struct Foo(pub Bar, pub Baz);
+```
+...is equivalent to this:
+```rust
+#[derive(PromiseTransmutableFrom, PromiseTransmutableInto)]
+#[repr(C)]
+pub struct Foo(pub Bar, pub Baz);
+```
+
+However, we caution *against* adding a corresponding trait or trait alias; e.g.:
+```rust
+trait PromiseTransmutable = PromiseTransmutableFrom + PromiseTransmutableInto;
+```
+The vast majority of users will *only* confront the stability declaration traits in the context of deriving them; the *only* scenario in which end-users will refer to these traits in a type-context is the [rare use-case][stability-uncommon] of *manually* implementing them. For such users, the separability of `PromiseTransmutableFrom` and `PromiseTransmutableInto` *is* relevant. The availability of a `PromiseTransmutable` trait or trait alias in this scenario would be a distraction, since referring to it in a type-context is almost certainly a misstep.
+
+We acknowledge that it is unusual for a `derive` macro to not create an item of the same name, but this weirdness is outweighed by the weirdness of the alternative: providing a trait for which there is almost no good use. 
 
 ## Extension: Byte Transmutation Traits
 [marker-traits]: #Extension-Byte-Transmutation-Traits
