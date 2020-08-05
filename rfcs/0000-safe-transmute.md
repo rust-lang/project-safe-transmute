@@ -752,7 +752,7 @@ By using the `NeglectAlignment` option, you are committing to ensure that the tr
 /// aligned, as required by the destination type.
 pub fn try_cast_ref<'t, 'u, T, U>(src: &'t T) -> Option<&'u U>
 where
-    &'t T: TransmuteInto<&'u U, neglect::Alignment>,
+    &'t T: TransmuteInto<&'u U, NeglectAlignment>,
 {
     if (src as *const T as usize) % align_of::<U>() != 0 {
         None
