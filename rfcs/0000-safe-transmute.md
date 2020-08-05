@@ -86,7 +86,7 @@ fn main() {
 ```
 This pattern, Kelley notes, is common when interacting with operating system APIs.
 
-This rust program compiles, but quietly introduces undefined behavior. `Foo` requires stricter in-memory alignment than `u8`. The equivalent code in Zig produces a compiler error for this reason and requires modification.
+This Rust program compiles, but quietly introduces undefined behavior. `Foo` requires stricter in-memory alignment than `u8`. The equivalent code in Zig produces a compiler error for this reason and requires modification.
 
 And that's not all: Kelley misses that the very layout of `Foo` itself is undefined⁠—it must be annotated with `#[repr(C)]`!
 
@@ -1764,7 +1764,7 @@ An exception to this rule is the [typic][crate-typic] crate, which utilizes comp
 
 The development approaches like [typic][crate-typic]'s could, perhaps, be eased by stabilizing [frunk](https://crates.io/crates/frunk)-like structural reflection, or (better yet) by stabilizing a compiler plugin API for registering "smart" traits like `TransmuteFrom`. However, we suspect that such features would be drastically harder to design and stabilize. 
 
-Regardless of approach, almost all [prior art][prior-art] attempts to reproduce knowledge *already* possessed by rustc during the compilation process (i.e., the layout qualities of a concrete type). Emulating the process of layout computation to any degree is an error-prone duplication of effort between rustc and the crate, in a domain where correctness is crucial.
+Regardless of approach, almost all [prior art][prior-art] attempts to reproduce knowledge *already* possessed by `rustc` during the compilation process (i.e., the layout qualities of a concrete type). Emulating the process of layout computation to any degree is an error-prone duplication of effort between `rustc` and the crate, in a domain where correctness is crucial.
 
 Finally, community-led, crate-based approaches are, inescapably, unauthoritative. These approaches are incapable of fulfilling our motivating goal of providing a *standard* mechanism for programmers to statically ensure that a transmutation is safe, sound, or stable.
 
