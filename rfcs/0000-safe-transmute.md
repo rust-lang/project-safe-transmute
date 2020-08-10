@@ -2123,7 +2123,7 @@ impl<'t, T> &'t [T] {
         Neglect: SafeTransmuteOptions,
         &'t [T; size_of::<U>()]: TransmuteInto<&'u [U; size_of::<T>()], Neglect>
     {
-        unsafe { self.unsafe_cast() }
+        unsafe { self.unsafe_transmute_into() }
     }
 
     /// Unsafely convert a `&[T]` into `&[U]`.
