@@ -1705,7 +1705,59 @@ fn main() {
 ```
 
 ### Case Study: Abstractions for Packet Parsing
-***TODO: josh***
+Using the core mechanisms of this RFC (along with the proposed [slice-casting extension][ext-slice-casting]) it is trivial to safely define useful zero-copy packet-parsing utilities, like those in the [`zerocopy`] and [`packet`] crates; e.g.:
+```
+impl<'a> &'a [u8]
+{
+    /// Analogous to:
+    ///   - https://fuchsia-docs.firebaseapp.com/rust/packet/trait.BufferView.html#method.peek_obj_front
+    ///   - https://fuchsia-docs.firebaseapp.com/rust/packet/trait.BufferView.html#method.take_obj_front
+    fn take_front<'t, T>(&'a mut self) -> Option<&'a T>
+    where
+        Self: CastInto<&'a [T]>,
+    {
+        let idx = size_of::<T>();
+        let (parsable, remainder) = self.split_at(idx);
+        *self = remainder;
+        parsable.cast_into().first()
+    }
+
+    /// Analogous to:
+    ///   - https://fuchsia-docs.firebaseapp.com/rust/packet/trait.BufferView.html#method.peek_obj_back
+    ///   - https://fuchsia-docs.firebaseapp.com/rust/packet/trait.BufferView.html#method.take_obj_back
+    fn take_back<'t, T>(&'a mut self) -> Option<&'a T>
+    where
+      Self: CastInto<&'a [T]>,
+    {
+        let idx = self.len().saturating_sub(size_of::<T>());
+        let (remainder, parsable) = self.split_at(idx);
+        *self = remainder;
+        parsable.cast_into().first()
+    }
+}
+```
+...which then can be used like so:
+```rust
+pub struct UdpPacket<'a> {
+    hdr: &'a UdpHeader,
+    body: &'a [u8],
+}
+
+#[derive(PromiseTransmutableFrom, PromiseTransmutableInto)]
+#[repr(C)]
+struct UdpHeader {
+    src_port: [u8; 2],
+    dst_port: [u8; 2],
+    length:   [u8; 2],
+    checksum: [u8; 2],
+}
+
+impl<'a> UdpPacket<'a> {
+    pub fn parse(mut bytes: &'a [u8]) -> Option<UdpPacket> {
+        Some(UdpPacket { hdr: bytes.read()?, body: bytes })
+    }
+}
+```
 
 ### Case Study: Abstractions for Pointer Bitpacking
 [case-study-alignment]: #case-study-abstractions-for-pointer-bitpacking
@@ -2112,6 +2164,8 @@ where
 ```
 
 ## Extension: Slice Casting
+[ext-slice-casting]: #extension-slice-casting
+
 Transmuting the contained type of a slice is a [common operation](https://internals.rust-lang.org/t/safe-trasnsmute-for-slices-e-g-u64-u32-particularly-simd-types/2871) in cryptography. Although this RFC does not propose the addition of a concrete method for slice casting, the mechanisms proposed in this RFC make possible sound and complete slice casting abstractions; e.g.:
 ```rust
 pub mod cast {
