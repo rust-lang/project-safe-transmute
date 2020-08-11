@@ -2114,31 +2114,114 @@ where
 ## Extension: Slice Casting
 Transmuting the contained type of a slice is a [common operation](https://internals.rust-lang.org/t/safe-trasnsmute-for-slices-e-g-u64-u32-particularly-simd-types/2871) in cryptography. Although this RFC does not propose the addition of a concrete method for slice casting, the mechanisms proposed in this RFC make possible sound and complete slice casting abstractions; e.g.:
 ```rust
-impl<'t, T> &'t [T] {
+pub mod cast {
+    use crate::transmute::{
+        TransmuteFrom,
+        options::{SafeTransmuteOptions, UnsafeTransmuteOptions},
+    };
 
-    /// Safely convert a `&[T]` into `&[U]`.
-    pub fn transmute_into<'u, U, Neglect>(&self) -> &'u [U]
-    where
-        Neglect: SafeTransmuteOptions,
-        &'t [T; size_of::<U>()]: TransmuteInto<&'u [U; size_of::<T>()], Neglect>
-    {
-        unsafe { self.unsafe_transmute_into() }
-    }
+    use core::{
+        mem::{size_of, size_of_val},
+        slice
+    };
 
-    /// Unsafely convert a `&[T]` into `&[U]`.
-    pub unsafe fn unsafe_transmute_into<'u, U, Neglect>(&self) -> &'u [U]
+    pub trait CastInto<Dst, Neglect=()>
     where
         Neglect: UnsafeTransmuteOptions,
-        &'t [T; size_of::<U>()]: TransmuteInto<&'u [U; size_of::<T>()], Neglect>
+        Dst: CastFrom<Self, Neglect>,
     {
-        let len = size_of_val(self).checked_div(size_of::<U>()).unwrap_or(0);
-        unsafe {
-            slice::from_raw_parts(self.as_ptr() as *const U, len)
+        fn cast_into(self) -> Dst
+        where
+            Self: Sized,
+            Dst: Sized,
+            Neglect: SafeTransmuteOptions
+        {
+            CastFrom::<_, Neglect>::cast_from(self)
+        }
+
+        unsafe fn unsafe_cast_into(self) -> Dst
+        where
+            Self: Sized,
+            Dst: Sized,
+            Neglect: UnsafeTransmuteOptions
+        {
+            CastFrom::<_, Neglect>::unsafe_cast_from(self)
+        }
+    }
+    
+    impl<Src, Dst, Neglect> CastInto<Dst, Neglect> for Src
+    where
+        Neglect: UnsafeTransmuteOptions,
+        Dst: CastFrom<Self, Neglect>,
+    {}
+
+    pub trait CastFrom<Src: ?Sized, Neglect=()>
+    where
+        Neglect: UnsafeTransmuteOptions
+    {
+        fn cast_from(src: Src) -> Self
+        where
+            Src: Sized,
+            Self: Sized,
+            Neglect: SafeTransmuteOptions;
+
+        unsafe fn unsafe_cast_from(src: Src) -> Self
+        where
+            Src: Sized,
+            Self: Sized,
+            Neglect: UnsafeTransmuteOptions;
+    }
+
+    /// Convert `&[Src]` to `&[Dst]` 
+    impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i [Src], Neglect> for &'o [Dst]
+    where
+        Neglect: UnsafeTransmuteOptions,
+        &'o [Dst; size_of::<Src>()]: TransmuteFrom<&'i [Src; size_of::<Dst>()], Neglect>
+    {
+        fn cast_from(src: &'i [Src]) -> &'o [Dst]
+        where
+            Neglect: SafeTransmuteOptions,
+        {
+            unsafe { CastFrom::<_,Neglect>::unsafe_cast_from(src) }
+        }
+
+        unsafe fn unsafe_cast_from(src: &'i [Src]) -> &'o [Dst]
+        where
+            Neglect: UnsafeTransmuteOptions,
+        {
+            let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
+            unsafe {
+                slice::from_raw_parts(src.as_ptr() as *const Dst, len)
+            }
+        }
+    }
+
+    /// Convert `&mut [Src]` to `&mut [Dst]` 
+    impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i mut [Src], Neglect> for &'o mut [Dst]
+    where
+        Neglect: UnsafeTransmuteOptions,
+        &'o mut [Dst; size_of::<Src>()]: TransmuteFrom<&'i mut [Src; size_of::<Dst>()], Neglect>
+    {
+        fn cast_from(src: &'i mut [Src]) -> &'o mut [Dst]
+        where
+            Neglect: SafeTransmuteOptions,
+        {
+            unsafe { CastFrom::<_,Neglect>::unsafe_cast_from(src) }
+        }
+
+        unsafe fn unsafe_cast_from(src: &'i mut [Src]) -> &'o mut [Dst]
+        where
+            Neglect: UnsafeTransmuteOptions,
+        {
+            let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
+            unsafe {
+                slice::from_raw_parts_mut(src.as_ptr() as *mut Dst, len)
+            }
         }
     }
 }
 ```
-The `TransmuteInto` bound statically ensures that `T` and `U` have compatible alignments, even though `.transmute_into()` isn't called in the body of this function.
+Note that `TransmuteFrom` is used as trait bound to ensure safety, but the `transmute_from()` method isn't actually called.
 
 ## Extension: `include_data!`
 [future-possibility-include_data]: #Extension-include_data
