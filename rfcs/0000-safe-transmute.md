@@ -187,7 +187,7 @@ A safe transmutation is ***stable*** if the authors of the source type and desti
 
 
 ### 📖 When is a transmutation sound?
-[sound transmutation]: #When-is-a-transmutation-sound?
+[sound transmutation]: #-when-is-a-transmutation-sound
 A transmutation is ***sound*** if the mere act of transmuting a value from one type to another is not undefined behavior.
 
 #### Well-Defined Representation
@@ -203,7 +203,7 @@ In contrast, most `struct` and `enum` types defined without an explicit `#[repr(
 To ensure that types you've define are soundly transmutable, you almost always (with very few exceptions) must mark them with the `#[repr(C)]` attribute.
 
 #### Requirements on Owned Values
-[transmute-owned]: #transmuting-owned-values
+[transmute-owned]: #requirements-on-owned-values
 
 Transmutations involving owned values must adhere to two rules to be sound. They must:
  * [preserve or broaden the bit validity][owned-validity], and
@@ -278,7 +278,7 @@ let _ : [u8; 32] = [u8; 16]::default().transmute_into(); // Compile Error!
 ```
 
 #### Requirements on References
-[transmute-references]: #transmuting-references
+[transmute-references]: #requirements-on-references
 
 The [restrictions above that apply to transmuting owned values][transmute-owned] also apply to transmuting references. However, references carry a few additional restrictions.
 
@@ -479,7 +479,7 @@ let z : NonEmptySlice<u8> = x;
 If this example did not produce a compile error, the value of `z` would not be a safe instance of its type, `NonEmptySlice`, because `z.first()` would dereference a null pointer.
 
 ### 📖 When is a transmutation stable?
-[stability]: #When-is-a-transmutation-stable
+[stability]: #-when-is-a-transmutation-stable
 
 Since the soundness and safety of a transmutation is affected by the layouts of the source and destination types, changes to those types' layouts may cause code which previously compiled to produce errors. In other words, transmutation causes a type's layout to become part of that type's API for the purposes of SemVer stability.
 
@@ -2024,7 +2024,6 @@ We acknowledge that it is unusual for a `derive` macro to not create an item of 
 
 ## Extension: Byte Transmutation Traits
 [marker-traits]: #Extension-Byte-Transmutation-Traits
-[future-possibility-safe-initialization]: #Safe-Initialization
 
 The marker traits from [zerocopy][crate-zerocopy] are expressible using `TransmuteFrom` and `TransmuteInto`. In principle, these traits could remain in crates. However, we believe their clarity and broad usefulness may justify their inclusion in `libcore`.
 
