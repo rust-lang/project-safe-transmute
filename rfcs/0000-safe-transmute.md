@@ -1706,9 +1706,10 @@ fn main() {
 
 ### Case Study: Abstractions for Packet Parsing
 Using the core mechanisms of this RFC (along with the proposed [slice-casting extension][ext-slice-casting]) it is trivial to safely define useful zero-copy packet-parsing utilities, like those in the [`zerocopy`] and [`packet`] crates; e.g.:
-```
+```rust
 impl<'a> &'a [u8]
 {
+    /// Read `&T` off the front of `self`, and shrink the underlying slice.
     /// Analogous to:
     ///   - https://fuchsia-docs.firebaseapp.com/rust/packet/trait.BufferView.html#method.peek_obj_front
     ///   - https://fuchsia-docs.firebaseapp.com/rust/packet/trait.BufferView.html#method.take_obj_front
@@ -1722,6 +1723,7 @@ impl<'a> &'a [u8]
         parsable.cast_into().first()
     }
 
+    /// Read `&T` off the back of `self`, and shrink the underlying slice.
     /// Analogous to:
     ///   - https://fuchsia-docs.firebaseapp.com/rust/packet/trait.BufferView.html#method.peek_obj_back
     ///   - https://fuchsia-docs.firebaseapp.com/rust/packet/trait.BufferView.html#method.take_obj_back
@@ -1754,7 +1756,7 @@ struct UdpHeader {
 
 impl<'a> UdpPacket<'a> {
     pub fn parse(mut bytes: &'a [u8]) -> Option<UdpPacket> {
-        Some(UdpPacket { hdr: bytes.read()?, body: bytes })
+        Some(UdpPacket { hdr: {bytes.read()?}, body: bytes })
     }
 }
 ```
