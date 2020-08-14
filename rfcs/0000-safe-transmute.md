@@ -1464,7 +1464,7 @@ Rather than change the `where` bound of the *definitions* of `PromiseTransmutabl
 impl<'a, T> PromiseTransmutableFrom for &'a T
 where
     T: PromiseTransmutableFrom,
-    for<'a> &'a Self::Archetype: TransmuteInto<&'a Self, NeglectStability>
+    &'a Self::Archetype: TransmuteInto<&'a Self, NeglectStability>
 {
     type Archetype = &'a T::Archetype;
 }
@@ -1472,7 +1472,7 @@ where
 impl<'a, T> PromiseTransmutableInto for &'a T
 where
     T: PromiseTransmutableInto,
-    for<'a> &'a Self::Archetype: TransmuteFrom<&'a Self, NeglectStability>
+    &'a Self::Archetype: TransmuteFrom<&'a Self, NeglectStability>
 {
     type Archetype = &'a T::Archetype;
 }
@@ -1500,7 +1500,7 @@ where
 impl<'a, T> PromiseTransmutableFrom for &'a mut T
 where
     T: PromiseTransmutableFrom,
-    for<'a> &'a mut Self::Archetype: TransmuteInto<&'a mut Self, NeglectStability>
+    &'a mut Self::Archetype: TransmuteInto<&'a mut Self, NeglectStability>
 {
     type Archetype = &'a T::Archetype;
 }
@@ -1508,7 +1508,7 @@ where
 impl<'a, T> PromiseTransmutableInto for &'a mut T
 where
     T: PromiseTransmutableInto,
-    for<'a> &'a mut Self::Archetype: TransmuteFrom<&'a mut Self, NeglectStability>
+    &'a mut Self::Archetype: TransmuteFrom<&'a mut Self, NeglectStability>
 {
     type Archetype = &'a T::Archetype;
 }
