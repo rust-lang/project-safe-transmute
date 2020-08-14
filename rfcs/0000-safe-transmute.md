@@ -228,7 +228,7 @@ let _ : u8 = Bool::True.transmute_into();
 let _ : u8 = Bool::False.transmute_into();
 ```
 <sup>
-(Note: <code>#[derive(PromiseTransmutableFrom, PromiseTransmutableInto)]</code> annotation connotes that <i>all</i> aspects of <code>Bool</code>'s layout are part of its <a href="#When-is-a-transmutation-stable?">library stability guarantee</a>.)
+(Note: <code>#[derive(PromiseTransmutableFrom, PromiseTransmutableInto)]</code> annotation connotes that <i>all</i> aspects of <code>Bool</code>'s layout are part of its <a href="#-when-is-a-transmutation-stable">library stability guarantee</a>.)
 </sup>
 
 ...because all possible instances of `Bool` are also valid instances of [`u8`]. However, transmuting a [`u8`] into a `Bool` is forbidden:
