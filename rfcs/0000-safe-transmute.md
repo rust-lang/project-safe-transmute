@@ -2168,29 +2168,26 @@ where
 ## Extension: Slice Casting
 [ext-slice-casting]: #extension-slice-casting
 
-Transmuting the contained type of a slice is a [common operation](https://internals.rust-lang.org/t/safe-trasnsmute-for-slices-e-g-u64-u32-particularly-simd-types/2871) in cryptography. Although this RFC does not propose the addition of a concrete method for slice casting, the mechanisms proposed in this RFC make possible sound and complete slice casting abstractions; e.g.:
+Transmuting the contained type of a slice is a [common operation](https://internals.rust-lang.org/t/safe-trasnsmute-for-slices-e-g-u64-u32-particularly-simd-types/2871) in cryptography and fast packet parsing. Although this RFC does not propose the addition of a concrete method for slice casting, the mechanisms proposed in this RFC make possible sound and complete slice casting abstractions; e.g.:
 ```rust
 pub mod cast {
-    use crate::transmute::{
-        TransmuteFrom,
-        options::{SafeTransmuteOptions, UnsafeTransmuteOptions},
-    };
 
-    use core::{
-        mem::{size_of, size_of_val},
-        slice
-    };
+    #[marker] pub trait SafeCastOptions: UnsafeCastOptions {}
+    #[marker] pub trait UnsafeCastOptions {}
+
+    impl SafeCastOptions for () {}
+    impl UnsafeCastOptions for () {}
 
     pub trait CastInto<Dst, Neglect=()>
     where
-        Neglect: UnsafeTransmuteOptions,
         Dst: CastFrom<Self, Neglect>,
+        Neglect: UnsafeCastOptions,
     {
         fn cast_into(self) -> Dst
         where
             Self: Sized,
             Dst: Sized,
-            Neglect: SafeTransmuteOptions
+            Neglect: SafeCastOptions,
         {
             CastFrom::<_, Neglect>::cast_from(self)
         }
@@ -2199,81 +2196,120 @@ pub mod cast {
         where
             Self: Sized,
             Dst: Sized,
-            Neglect: UnsafeTransmuteOptions
+            Neglect: UnsafeCastOptions,
         {
             CastFrom::<_, Neglect>::unsafe_cast_from(self)
         }
     }
-    
+
     impl<Src, Dst, Neglect> CastInto<Dst, Neglect> for Src
     where
-        Neglect: UnsafeTransmuteOptions,
         Dst: CastFrom<Self, Neglect>,
+        Neglect: UnsafeCastOptions,
     {}
 
     pub trait CastFrom<Src: ?Sized, Neglect=()>
     where
-        Neglect: UnsafeTransmuteOptions
+        Neglect: UnsafeCastOptions,
     {
         fn cast_from(src: Src) -> Self
         where
             Src: Sized,
             Self: Sized,
-            Neglect: SafeTransmuteOptions;
+            Neglect: SafeCastOptions
+        {
+            unsafe { CastFrom::<_,Neglect>::unsafe_cast_from(src) }
+        }
 
         unsafe fn unsafe_cast_from(src: Src) -> Self
         where
             Src: Sized,
             Self: Sized,
-            Neglect: UnsafeTransmuteOptions;
+            Neglect: UnsafeCastOptions;
     }
 
-    /// Convert `&[Src]` to `&[Dst]` 
-    impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i [Src], Neglect> for &'o [Dst]
-    where
-        Neglect: UnsafeTransmuteOptions,
-        &'o [Dst; size_of::<Src>()]: TransmuteFrom<&'i [Src; size_of::<Dst>()], Neglect>
-    {
-        fn cast_from(src: &'i [Src]) -> &'o [Dst]
-        where
-            Neglect: SafeTransmuteOptions,
-        {
-            unsafe { CastFrom::<_,Neglect>::unsafe_cast_from(src) }
-        }
+    /// Options for casting the contents of slices.
+    pub mod slice {
+        use super::{
+            CastFrom,
+            SafeCastOptions,
+            UnsafeCastOptions,
+            super::transmute::{
+                TransmuteFrom,
+                options::{SafeTransmuteOptions, UnsafeTransmuteOptions},
+            },
+        };
 
-        unsafe fn unsafe_cast_from(src: &'i [Src]) -> &'o [Dst]
+        use core::{
+            mem::{size_of, size_of_val},
+            slice
+        };
+
+        /// All `SafeTransmuteOptions` are `SafeSliceCastOptions`.
+        pub trait SafeSliceCastOptions
+            : SafeCastOptions
+            + SafeTransmuteOptions
+            + UnsafeSliceCastOptions
+        {}
+
+        /// All `UnsafeTransmuteOptions` are `UnsafeSliceCastOptions`.
+        pub trait UnsafeSliceCastOptions
+            : UnsafeCastOptions
+            + UnsafeTransmuteOptions
+        {}
+
+        impl<Neglect: SafeTransmuteOptions> SafeCastOptions for Neglect {}
+        impl<Neglect: SafeTransmuteOptions> SafeSliceCastOptions for Neglect {}
+        impl<Neglect: UnsafeTransmuteOptions> UnsafeCastOptions for Neglect {}
+        impl<Neglect: UnsafeTransmuteOptions> UnsafeSliceCastOptions for Neglect {}
+
+        /// Convert `&[Src]` to `&[Dst]`
+        impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i [Src], Neglect> for &'o [Dst]
         where
-            Neglect: UnsafeTransmuteOptions,
+            Neglect: UnsafeSliceCastOptions,
+            &'o [Dst; size_of::<Src>()]: TransmuteFrom<&'i [Src; size_of::<Dst>()], Neglect>
         {
-            let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
-            unsafe {
-                slice::from_raw_parts(src.as_ptr() as *const Dst, len)
+            unsafe fn unsafe_cast_from(src: &'i [Src]) -> &'o [Dst]
+            where
+                Neglect: UnsafeSliceCastOptions,
+            {
+                let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
+                unsafe { slice::from_raw_parts(src.as_ptr() as *const Dst, len) }
             }
         }
-    }
 
-    /// Convert `&mut [Src]` to `&mut [Dst]` 
-    impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i mut [Src], Neglect> for &'o mut [Dst]
-    where
-        Neglect: UnsafeTransmuteOptions,
-        &'o mut [Dst; size_of::<Src>()]: TransmuteFrom<&'i mut [Src; size_of::<Dst>()], Neglect>
-    {
-        fn cast_from(src: &'i mut [Src]) -> &'o mut [Dst]
+        /// Convert `&mut [Src]` to `&mut [Dst]`
+        impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i mut [Src], Neglect> for &'o mut [Dst]
         where
-            Neglect: SafeTransmuteOptions,
+            Neglect: UnsafeSliceCastOptions,
+            &'o mut [Dst; size_of::<Src>()]: TransmuteFrom<&'i mut [Src; size_of::<Dst>()], Neglect>
         {
-            unsafe { CastFrom::<_,Neglect>::unsafe_cast_from(src) }
-        }
-
-        unsafe fn unsafe_cast_from(src: &'i mut [Src]) -> &'o mut [Dst]
-        where
-            Neglect: UnsafeTransmuteOptions,
-        {
-            let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
-            unsafe {
-                slice::from_raw_parts_mut(src.as_ptr() as *mut Dst, len)
+            unsafe fn unsafe_cast_from(src: &'i mut [Src]) -> &'o mut [Dst]
+            where
+                Neglect: UnsafeSliceCastOptions,
+            {
+                let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
+                unsafe { slice::from_raw_parts_mut(src.as_ptr() as *mut Dst, len) }
             }
         }
+
+        /// Convert `&mut [Src]` to `&[Dst]`
+        impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i mut [Src], Neglect> for &'o [Dst]
+        where
+            Neglect: UnsafeSliceCastOptions,
+            &'o mut [Dst; size_of::<Src>()]: TransmuteFrom<&'i [Src; size_of::<Dst>()], Neglect>
+        {
+            unsafe fn unsafe_cast_from(src: &'i mut [Src]) -> &'o [Dst]
+            where
+                Neglect: UnsafeSliceCastOptions,
+            {
+                let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
+                unsafe {
+                    slice::from_raw_parts(src.as_ptr() as *const Dst, len)
+                }
+            }
+        }
+
     }
 }
 ```
