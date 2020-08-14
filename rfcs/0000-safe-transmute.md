@@ -860,7 +860,7 @@ This [minimal implementation][minimal-impl] is sufficient for convincing the com
 
 ### Listing for Initial, Minimal Implementation
 [minimal-impl]: #Listing-for-Initial-Minimal-Implementation
-**[This module listing provides the minimal-viable implementation of this RFC (excepting the automatic derives).](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2018&gist=25a83d8d8e33e9f631a64b53e3c39844)** This listing is also the **canonical specification** of this RFC's public API surface.
+**[This module listing provides the minimal-viable implementation of this RFC (excepting the automatic derives).](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2018&gist=bca1ad92882760e94cd4a79bccf4de30)** This listing is also the **canonical specification** of this RFC's public API surface.
 
 ### Towards an Initial, Smart Implementation
 
