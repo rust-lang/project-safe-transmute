@@ -877,7 +877,377 @@ This [minimal implementation][minimal-impl] is sufficient for convincing the com
 
 ### Listing for Initial, Minimal Implementation
 [minimal-impl]: #Listing-for-Initial-Minimal-Implementation
-**[This module listing provides the minimal-viable implementation of this RFC (excepting the automatic derives).](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2018&gist=bca1ad92882760e94cd4a79bccf4de30)** This listing is also the **canonical specification** of this RFC's public API surface.
+This listing is both a minimal-viable implementation of this RFC (excepting the automatic derives) and the **canonical specification** of this RFC's API surface ([playground](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2018&gist=dee36fb5231c9e00b03b424e204cd1a9)):
+```rust
+#![feature(const_generics)] // for stability declarations on `[T; N]`
+#![feature(decl_macro)] // for stub implementations of derives
+#![feature(never_type)] // for stability declarations on `!`
+#![allow(unused_unsafe, incomplete_features)]
+
+/// Transmutation conversions.
+// suggested location: `core::convert`
+pub mod transmute {
+
+    use {options::*, stability::*};
+
+    /// Reinterprets the bits of a value of one type as another type, safely.
+    #[inline(always)]
+    pub /*const*/ fn safe_transmute<Src, Dst, Neglect>(src: Src) -> Dst
+    where
+        Src: TransmuteInto<Dst, Neglect>,
+        Neglect: SafeTransmuteOptions
+    {
+        src.transmute_into()
+    }
+
+    /// Reinterprets the bits of a value of one type as another type, potentially unsafely.
+    #[inline(always)]
+    pub /*const*/ unsafe fn unsafe_transmute<Src, Dst, Neglect>(src: Src) -> Dst
+    where
+        Src: TransmuteInto<Dst, Neglect>,
+        Neglect: UnsafeTransmuteOptions
+    {
+        unsafe { src.unsafe_transmute_into() }
+    }
+
+    /// `Self: TransmuteInto<Dst, Neglect`, if the compiler accepts the stability,
+    /// safety, and soundness of transmuting `Self` into `Dst`, notwithstanding
+    /// a given set of static checks to `Neglect`.
+    pub unsafe trait TransmuteInto<Dst: ?Sized, Neglect = ()>
+    where
+        Neglect: UnsafeTransmuteOptions,
+    {
+        /// Reinterpret the bits of a value of one type as another type, safely.
+        fn transmute_into(self) -> Dst
+        where
+            Self: Sized,
+            Dst: Sized,
+            Neglect: SafeTransmuteOptions;
+
+        /// Reinterpret the bits of a value of one type as another type, potentially unsafely.
+        ///
+        /// The onus is on you to ensure that calling this method is safe.
+        unsafe fn unsafe_transmute_into(self) -> Dst
+        where
+            Self: Sized,
+            Dst: Sized,
+            Neglect: UnsafeTransmuteOptions;
+    }
+
+    unsafe impl<Src, Dst, Neglect> TransmuteInto<Dst, Neglect> for Src
+    where
+        Src: ?Sized,
+        Dst: ?Sized + TransmuteFrom<Src, Neglect>,
+        Neglect: UnsafeTransmuteOptions,
+    {
+        #[inline(always)]
+        fn transmute_into(self) -> Dst
+        where
+            Self: Sized,
+            Dst: Sized,
+            Neglect: SafeTransmuteOptions,
+        {
+            Dst::transmute_from(self)
+        }
+
+        #[inline(always)]
+        unsafe fn unsafe_transmute_into(self) -> Dst
+        where
+            Self: Sized,
+            Dst: Sized,
+            Neglect: UnsafeTransmuteOptions,
+        {
+            unsafe { Dst::unsafe_transmute_from(self) }
+        }
+    }
+
+    /// `Self: TransmuteInto<Src, Neglect`, if the compiler accepts the stability,
+    /// safety, and soundness of transmuting `Src` into `Self`, notwithstanding
+    /// a given set of static checks to `Neglect`.
+    /* #[lang = "transmute_from"] */
+    pub unsafe trait TransmuteFrom<Src: ?Sized, Neglect = ()>
+    where
+        Neglect: UnsafeTransmuteOptions,
+    {
+        /// Reinterpret the bits of a value of one type as another type, safely.
+        #[inline(always)]
+        fn transmute_from(src: Src) -> Self
+        where
+            Src: Sized,
+            Self: Sized,
+            Neglect: SafeTransmuteOptions,
+        {
+            use core::{mem, ptr};
+            unsafe {
+                let dst = ptr::read(&src as *const Src as *const Self);
+                mem::forget(src);
+                dst
+            }
+        }
+
+        /// Reinterpret the bits of a value of one type as another type, potentially unsafely.
+        ///
+        /// The onus is on you to ensure that calling this function is safe.
+        #[inline(always)]
+        unsafe fn unsafe_transmute_from(src: Src) -> Self
+        where
+            Src: Sized,
+            Self: Sized,
+            Neglect: UnsafeTransmuteOptions,
+        {
+            use core::{mem, ptr};
+            unsafe {
+                let dst = ptr::read_unaligned(&src as *const Src as *const Self);
+                mem::forget(src);
+                dst
+            }
+        }
+    }
+
+    /// A type is always transmutable from itself.
+    unsafe impl<T> TransmuteFrom<T, NeglectStability> for T {}
+
+    /// A type is *stably* transmutable if...
+    unsafe impl<Src, Dst> TransmuteFrom<Src> for Dst
+    where
+        Src: PromiseTransmutableInto,
+        Dst: PromiseTransmutableFrom,
+        <Dst as PromiseTransmutableFrom>::Archetype:
+            TransmuteFrom<
+                <Src as PromiseTransmutableInto>::Archetype,
+                NeglectStability
+            >
+    {}
+
+    /// Traits for declaring the SemVer stability of types.
+    pub mod stability {
+
+        use super::{TransmuteFrom, TransmuteInto, options::NeglectStability};
+
+        /// Declare that transmuting `Self` into `Archetype` is SemVer-stable.
+        /* #[lang = "promise_transmutable_into"] */
+        pub trait PromiseTransmutableInto
+        {
+            /// The `Archetype` must be safely transmutable from `Self`.
+            type Archetype
+                : TransmuteFrom<Self, NeglectStability>
+                + PromiseTransmutableInto;
+        }
+
+        /// Declare that transmuting `Self` from `Archetype` is SemVer-stable.
+        /* #[lang = "promise_transmutable_from"] */
+        pub trait PromiseTransmutableFrom
+        {
+            /// The `Archetype` must be safely transmutable into `Self`.
+            type Archetype
+                : TransmuteInto<Self, NeglectStability>
+                + PromiseTransmutableFrom;
+        }
+
+
+        /// Derive macro generating an impl of the trait `PromiseTransmutableInto`.
+        //#[rustc_builtin_macro]
+        pub macro PromiseTransmutableInto($item:item) {
+            /* compiler built-in */
+        }
+
+        /// Derive macro generating an impl of the trait `PromiseTransmutableFrom`.
+        //#[rustc_builtin_macro]
+        pub macro PromiseTransmutableFrom($item:item) {
+            /* compiler built-in */
+        }
+
+
+        impl PromiseTransmutableInto for     ! {type Archetype = Self;}
+        impl PromiseTransmutableFrom for     ! {type Archetype = Self;}
+
+        impl PromiseTransmutableInto for    () {type Archetype = Self;}
+        impl PromiseTransmutableFrom for    () {type Archetype = Self;}
+
+        impl PromiseTransmutableInto for   f32 {type Archetype = Self;}
+        impl PromiseTransmutableFrom for   f32 {type Archetype = Self;}
+        impl PromiseTransmutableInto for   f64 {type Archetype = Self;}
+        impl PromiseTransmutableFrom for   f64 {type Archetype = Self;}
+
+        impl PromiseTransmutableInto for    i8 {type Archetype = Self;}
+        impl PromiseTransmutableFrom for    i8 {type Archetype = Self;}
+        impl PromiseTransmutableInto for   i16 {type Archetype = Self;}
+        impl PromiseTransmutableFrom for   i16 {type Archetype = Self;}
+        impl PromiseTransmutableInto for   i32 {type Archetype = Self;}
+        impl PromiseTransmutableFrom for   i32 {type Archetype = Self;}
+        impl PromiseTransmutableInto for   i64 {type Archetype = Self;}
+        impl PromiseTransmutableFrom for   i64 {type Archetype = Self;}
+        impl PromiseTransmutableInto for  i128 {type Archetype = Self;}
+        impl PromiseTransmutableFrom for  i128 {type Archetype = Self;}
+        impl PromiseTransmutableInto for isize {type Archetype = Self;}
+        impl PromiseTransmutableFrom for isize {type Archetype = Self;}
+
+        impl PromiseTransmutableInto for    u8 {type Archetype = Self;}
+        impl PromiseTransmutableFrom for    u8 {type Archetype = Self;}
+        impl PromiseTransmutableInto for   u16 {type Archetype = Self;}
+        impl PromiseTransmutableFrom for   u16 {type Archetype = Self;}
+        impl PromiseTransmutableInto for   u32 {type Archetype = Self;}
+        impl PromiseTransmutableFrom for   u32 {type Archetype = Self;}
+        impl PromiseTransmutableInto for   u64 {type Archetype = Self;}
+        impl PromiseTransmutableFrom for   u64 {type Archetype = Self;}
+        impl PromiseTransmutableInto for  u128 {type Archetype = Self;}
+        impl PromiseTransmutableFrom for  u128 {type Archetype = Self;}
+        impl PromiseTransmutableInto for usize {type Archetype = Self;}
+        impl PromiseTransmutableFrom for usize {type Archetype = Self;}
+
+        use core::marker::PhantomData;
+        impl<T: ?Sized> PromiseTransmutableInto for PhantomData<T> { type Archetype = Self; }
+        impl<T: ?Sized> PromiseTransmutableFrom for PhantomData<T> { type Archetype = Self; }
+
+
+        impl<T, const N: usize> PromiseTransmutableInto for [T; N]
+        where
+            T: PromiseTransmutableInto,
+            [T::Archetype; N]
+                : TransmuteFrom<Self, NeglectStability>
+                + PromiseTransmutableInto,
+        {
+            type Archetype = [T::Archetype; N];
+        }
+
+        impl<T, const N: usize> PromiseTransmutableFrom for [T; N]
+        where
+            T: PromiseTransmutableFrom,
+            [T::Archetype; N]
+                : TransmuteInto<Self, NeglectStability>
+                + PromiseTransmutableFrom,
+        {
+            type Archetype = [T::Archetype; N];
+        }
+
+
+        impl<T: ?Sized> PromiseTransmutableInto for *const T
+        where
+            T: PromiseTransmutableInto,
+            *const T::Archetype
+                : TransmuteFrom<Self, NeglectStability>
+                + PromiseTransmutableInto,
+        {
+            type Archetype = *const T::Archetype;
+        }
+
+        impl<T: ?Sized> PromiseTransmutableFrom for *const T
+        where
+            T: PromiseTransmutableFrom,
+            *const T::Archetype
+                : TransmuteInto<Self, NeglectStability>
+                + PromiseTransmutableFrom,
+        {
+            type Archetype = *const T::Archetype;
+        }
+
+
+        impl<T: ?Sized> PromiseTransmutableInto for *mut T
+        where
+            T: PromiseTransmutableInto,
+            *mut T::Archetype
+                : TransmuteFrom<Self, NeglectStability>
+                + PromiseTransmutableInto,
+        {
+            type Archetype = *mut T::Archetype;
+        }
+
+        impl<T: ?Sized> PromiseTransmutableFrom for *mut T
+        where
+            T: PromiseTransmutableFrom,
+            *mut T::Archetype
+                : TransmuteInto<Self, NeglectStability>
+                + PromiseTransmutableFrom,
+        {
+            type Archetype = *mut T::Archetype;
+        }
+
+
+        impl<'a, T: ?Sized> PromiseTransmutableInto for &'a T
+        where
+            T: PromiseTransmutableInto,
+            &'a T::Archetype
+                : TransmuteFrom<&'a T, NeglectStability>
+                + PromiseTransmutableInto,
+        {
+            type Archetype = &'a T::Archetype;
+        }
+
+        impl<'a, T: ?Sized> PromiseTransmutableFrom for &'a T
+        where
+            T: PromiseTransmutableFrom,
+            &'a T::Archetype
+                : TransmuteInto<&'a T, NeglectStability>
+                + PromiseTransmutableFrom,
+        {
+            type Archetype = &'a T::Archetype;
+        }
+
+        impl<'a, T: ?Sized> PromiseTransmutableInto for &'a mut T
+        where
+            T: PromiseTransmutableInto,
+            &'a mut T::Archetype
+                : TransmuteFrom<&'a mut T, NeglectStability>
+                + PromiseTransmutableInto,
+        {
+            type Archetype = &'a mut T::Archetype;
+        }
+
+        impl<'a, T: ?Sized> PromiseTransmutableFrom for &'a mut T
+        where
+            T: PromiseTransmutableFrom,
+            &'a mut T::Archetype
+                : TransmuteInto<&'a mut T, NeglectStability>
+                + PromiseTransmutableFrom,
+        {
+            type Archetype = &'a mut T::Archetype;
+        }
+    }
+
+    /// Static checks that may be neglected when determining if a type is `TransmuteFrom` some other type.
+    pub mod options {
+
+        /// Options that may be used with safe transmutations.
+        pub trait SafeTransmuteOptions: UnsafeTransmuteOptions
+        {}
+
+        /// Options that may be used with unsafe transmutations.
+        pub trait UnsafeTransmuteOptions: private::Sealed
+        {}
+
+        impl SafeTransmuteOptions for () {}
+        impl UnsafeTransmuteOptions for () {}
+
+        /// Neglect the stability check of `TransmuteFrom`.
+        /* #[lang = "neglect_stability"] */
+        pub struct NeglectStability;
+
+        // Uncomment this if/when constructibility is fully implemented:
+        // impl SafeTransmuteOptions for NeglectStability {}
+        impl UnsafeTransmuteOptions for NeglectStability {}
+
+        /*
+        pub struct NeglectAlignment;
+        impl UnsafeTransmuteOptions for NeglectAlignment {}
+        */
+
+        /* FILL: Implementations for tuple combinations of options */
+
+        // prevent third-party implementations of `UnsafeTransmuteOptions`
+        mod private {
+            use super::*;
+
+            pub trait Sealed {}
+
+            impl Sealed for () {}
+            impl Sealed for NeglectStability {}
+            /* impl Sealed for NeglectAlignment {} */
+
+            /* FILL: Implementations for tuple combinations of options */
+        }
+    }
+}
+```
 
 ### Towards an Initial, Smart Implementation
 
