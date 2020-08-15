@@ -97,8 +97,25 @@ This situation is frustrating. Like `zig`, `rustc` *knows* the layout of `Foo`, 
 
 This RFC proposes mechanisms that use this information to enable safer transmutation. We revisit Kelley's motivating example with these proposed mechanisms near the end of this RFC, [*here*][case-study-safer-unsafe].
 
-## Efficient Network Parsing
-***TODO: Josh?***
+## Efficient Parsing
+In languages like C or C++, a common technique for parsing structured data such as network packets or file formats is to declare a type whose fields correspond to the fields of the data being parsed. An input byte array is then parsed by casting a pointer to the array (e.g., `a char *`) to a pointer to the typed representation (e.g., `udp_header_t *`). It is the programmer's responsibility to avoid the many pitfalls that could introduce undefined behavior when using this pattern.
+
+In Rust, we might employ the same technique:
+```rust
+struct UdpHeader {
+    src_port: u16,
+    dst_port: u16,
+    length:   u16,
+    checksum: [u8; 2],
+}
+```
+However, as it stands today, it is still the programmer's responsibility to ensure that a conversion such as `&[u8]` to `&UdpHeader` is sound. In the above example, we can see a number of pitfalls that a programmer must know to avoid:
+  - The layout of `UdpHeader` is undefined without `#[repr(C)]`
+  - The conversion of `&[u8]` to `&UdpHeader` is invalid in the general case because the length of the byte slice must be sufficient
+  - The conversion of `&[u8]` to `&UdpHeader` is invalid in the general case because the alignment of the byte slice must be sufficient (the alignment issue can be avoided by replacing the `u16` fields with `[u8; 2]`)
+
+This RFC proposes mechanisms that would allow to perform this reference conversion safely, and would fail compilation if any of the above pitfalls were encountered. We revisit this example [here][case-study-parsing].
+
 
 ## Safer Initialization Primitives
 The initialization primitives `mem::zeroed<T>` and `mem::uninitialized<T>` are `unsafe` because they may be used to initialize types for which zeroed or uninitialized memory are *not* valid bit-patterns. The `mem::zeroed` function recently gained a dynamically-enforced validity check, but this safety measure isn't wholly satisfactory: the validity properties of `T` are statically known, but the check is dynamic.
@@ -130,7 +147,7 @@ This RFC proposes mechanisms that would eliminate `unsafe` in this example. We r
 
 
 ## SIMD
-***TODO:*** https://internals.rust-lang.org/t/pre-rfc-frombits-intobits/7071
+***TODO:*** This might be helpful: https://internals.rust-lang.org/t/pre-rfc-frombits-intobits/7071
 
 
 ## `Atomic<T>`
@@ -1704,7 +1721,8 @@ fn main() {
 }
 ```
 
-### Case Study: Abstractions for Packet Parsing
+### Case Study: Abstractions for Fast Parsing
+[case-study-parsing]: #case-study-abstractions-for-fast-parsing
 Using the core mechanisms of this RFC (along with the proposed [slice-casting extension][ext-slice-casting]) it is trivial to safely define useful zero-copy packet-parsing utilities, like those in the [`zerocopy`] and [`packet`] crates; e.g.:
 ```rust
 impl<'a> &'a [u8]
@@ -1738,7 +1756,7 @@ impl<'a> &'a [u8]
     }
 }
 ```
-...which then can be used like so:
+To parse a `UdpPacket` given a byte slice,  we split the slice into a slice containing first 8 bytes, and the remainder. We then cast the first slice into a reference to a `UdpHeader`. A `UdpPacket`, then, consists of the reference to the `UdpHeader`, and the remainder slice. Concretely:
 ```rust
 pub struct UdpPacket<'a> {
     hdr: &'a UdpHeader,
@@ -1760,6 +1778,7 @@ impl<'a> UdpPacket<'a> {
     }
 }
 ```
+While this example is simple, the technique can be expanded to arbitrarily complex structures.
 
 ### Case Study: Abstractions for Pointer Bitpacking
 [case-study-alignment]: #case-study-abstractions-for-pointer-bitpacking
