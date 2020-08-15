@@ -2148,7 +2148,7 @@ impl<'a> UdpPacket<'a> {
     }
 }
 ```
-While this example is simple, the technique can be expanded to arbitrarily complex structures.
+While this example is simple, the technique can be [expanded](https://fuchsia-docs.firebaseapp.com/rust/packet_formats/) to arbitrarily complex structures.
 
 ### Case Study: Abstractions for Pointer Bitpacking
 [case-study-alignment]: #case-study-abstractions-for-pointer-bitpacking
