@@ -8,11 +8,7 @@ support safe transmute
 - Rust lang team contacts:
   - [joshtriplett (Josh)](https://github.com/joshtriplett)
 - [Our chat room][zulip-room]
-- [Our charter](charter.md)
-- [Cross-language unwinding FAQ](faq.md)
-- [Our project planning](planning/project-planning.md)
-- [Technical items in scope (table)](planning/scope-by-platform-table.md)
-- [Technical items on our roadmap](planning/roadmap/)
+- [The RFC](https://github.com/rust-lang/project-safe-transmute/pull/5)
 
 [shepherds-blog]: http://smallcultfollowing.com/babysteps/blog/2019/09/11/aic-shepherds-3-0/
 [zulip-room]: https://rust-lang.zulipchat.com/#narrow/stream/216762-project-safe-transmute
