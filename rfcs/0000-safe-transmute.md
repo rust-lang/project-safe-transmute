@@ -646,7 +646,7 @@ Two traits provide mechanisms for transmutation between types:
 #[lang = "transmute_from"]
 pub unsafe trait TransmuteFrom<Src: ?Sized, Neglect = ()>
 where
-    Neglect: UnsafeTransmuteOptions,
+    Neglect: TransmuteOptions,
 {
     #[inline(always)]
     fn transmute_from(src: Src) -> Self
@@ -663,7 +663,7 @@ where
     where
         Src: Sized,
         Self: Sized,
-        Neglect: UnsafeTransmuteOptions,
+        Neglect: TransmuteOptions,
     {
         use core::{mem, ptr};
         unsafe {
@@ -677,7 +677,7 @@ where
 // implemented in terms of `TransmuteFrom`
 pub unsafe trait TransmuteInto<Dst: ?Sized, Neglect = ()>
 where
-    Neglect: UnsafeTransmuteOptions,
+    Neglect: TransmuteOptions,
 {
     fn transmute_into(self) -> Dst
     where
@@ -689,14 +689,14 @@ where
     where
         Self: Sized,
         Dst: Sized,
-        Neglect: UnsafeTransmuteOptions;
+        Neglect: TransmuteOptions;
 }
 
 unsafe impl<Src, Dst, Neglect> TransmuteInto<Dst, Neglect> for Src
 where
     Src: ?Sized,
     Dst: ?Sized + TransmuteFrom<Src, Neglect>,
-    Neglect: UnsafeTransmuteOptions,
+    Neglect: TransmuteOptions,
 {
     ...
 }
@@ -715,18 +715,18 @@ The default value of the `Neglect` parameter, `()`, statically forbids transmute
 | `NeglectAlignment`  | Safety      | `unsafe_transmute_{from,into}`                          |
 | `NeglectValidity`   | Soundness   | `unsafe_transmute_{from,into}`                          |
 
-`NeglectStabilty` implements the `SafeTransmuteOptions` and `UnsafeTransmuteOptions` marker traits, as it can be used in both safe and unsafe code. The selection of multiple options is encoded by grouping them as a tuple; e.g., `(NeglectAlignment, NeglectValidity)` is a selection of both the `NeglectAlignment` and `NeglectValidity` options.
+`NeglectStabilty` implements the `SafeTransmuteOptions` and `TransmuteOptions` marker traits, as it can be used in both safe and unsafe code. The selection of multiple options is encoded by grouping them as a tuple; e.g., `(NeglectAlignment, NeglectValidity)` is a selection of both the `NeglectAlignment` and `NeglectValidity` options.
 
 We introduce two marker traits which serve to group together the options that may be used with safe transmutes, and those which may be used with `unsafe` transmutes:
 ```rust
 pub trait SafeTransmuteOptions: private::Sealed
 {}
 
-pub trait UnsafeTransmuteOptions: SafeTransmuteOptions
+pub trait TransmuteOptions: SafeTransmuteOptions
 {}
 
 impl SafeTransmuteOptions for () {}
-impl UnsafeTransmuteOptions for () {}
+impl TransmuteOptions for () {}
 ```
 
 #### `NeglectStability`
@@ -737,7 +737,7 @@ By default, `TransmuteFrom` and `TransmuteInto`'s methods require that the [layo
 pub struct NeglectStability;
 
 impl SafeTransmuteOptions for NeglectStability {}
-impl UnsafeTransmuteOptions for NeglectStability {}
+impl TransmuteOptions for NeglectStability {}
 ```
 
 Prior to the adoption of the [stability declaration traits][stability], crate authors documented the layout guarantees of their types with doc comments. The `TransmuteFrom` and `TransmuteInto` traits and methods may be used with these types by requesting that the stability check is neglected; for instance:
@@ -760,7 +760,7 @@ By default, `TransmuteFrom` and `TransmuteInto`'s methods require that, when tra
 ```rust
 pub struct NeglectAlignment;
 
-impl UnsafeTransmuteOptions for NeglectAlignment {}
+impl TransmuteOptions for NeglectAlignment {}
 ```
 
 By using the `NeglectAlignment` option, you are committing to ensure that the transmuted reference satisfies the alignment requirements of the destination's referent type. For instance:
@@ -800,7 +800,7 @@ The `NeglectValidity` option disables this check.
 ```rust
 pub struct NeglectValidity;
 
-impl UnsafeTransmuteOptions for NeglectValidity {}
+impl TransmuteOptions for NeglectValidity {}
 ```
 
 By using the `NeglectValidity` option, you are committing to ensure dynamically source value is a valid instance of the destination type. For instance:
@@ -858,7 +858,7 @@ The *only* item defined by this RFC requiring special compiler support is `Trans
 /// A type is transmutable into itself.
 unsafe impl<T, Neglect> TransmuteFrom<T, Neglect> for T
 where
-    Neglect: UnsafeTransmuteOptions
+    Neglect: TransmuteOptions
 {}
 
 /// A transmutation is *stable* if...
@@ -905,7 +905,7 @@ pub mod transmute {
     pub /*const*/ unsafe fn unsafe_transmute<Src, Dst, Neglect>(src: Src) -> Dst
     where
         Src: TransmuteInto<Dst, Neglect>,
-        Neglect: UnsafeTransmuteOptions
+        Neglect: TransmuteOptions
     {
         unsafe { src.unsafe_transmute_into() }
     }
@@ -915,7 +915,7 @@ pub mod transmute {
     /// a given set of static checks to `Neglect`.
     pub unsafe trait TransmuteInto<Dst: ?Sized, Neglect = ()>
     where
-        Neglect: UnsafeTransmuteOptions,
+        Neglect: TransmuteOptions,
     {
         /// Reinterpret the bits of a value of one type as another type, safely.
         fn transmute_into(self) -> Dst
@@ -931,14 +931,14 @@ pub mod transmute {
         where
             Self: Sized,
             Dst: Sized,
-            Neglect: UnsafeTransmuteOptions;
+            Neglect: TransmuteOptions;
     }
 
     unsafe impl<Src, Dst, Neglect> TransmuteInto<Dst, Neglect> for Src
     where
         Src: ?Sized,
         Dst: ?Sized + TransmuteFrom<Src, Neglect>,
-        Neglect: UnsafeTransmuteOptions,
+        Neglect: TransmuteOptions,
     {
         #[inline(always)]
         fn transmute_into(self) -> Dst
@@ -955,7 +955,7 @@ pub mod transmute {
         where
             Self: Sized,
             Dst: Sized,
-            Neglect: UnsafeTransmuteOptions,
+            Neglect: TransmuteOptions,
         {
             unsafe { Dst::unsafe_transmute_from(self) }
         }
@@ -967,7 +967,7 @@ pub mod transmute {
     /* #[lang = "transmute_from"] */
     pub unsafe trait TransmuteFrom<Src: ?Sized, Neglect = ()>
     where
-        Neglect: UnsafeTransmuteOptions,
+        Neglect: TransmuteOptions,
     {
         /// Reinterpret the bits of a value of one type as another type, safely.
         #[inline(always)]
@@ -993,7 +993,7 @@ pub mod transmute {
         where
             Src: Sized,
             Self: Sized,
-            Neglect: UnsafeTransmuteOptions,
+            Neglect: TransmuteOptions,
         {
             use core::{mem, ptr};
             unsafe {
@@ -1208,15 +1208,15 @@ pub mod transmute {
     pub mod options {
 
         /// Options that may be used with safe transmutations.
-        pub trait SafeTransmuteOptions: UnsafeTransmuteOptions
+        pub trait SafeTransmuteOptions: TransmuteOptions
         {}
 
         /// Options that may be used with unsafe transmutations.
-        pub trait UnsafeTransmuteOptions: private::Sealed
+        pub trait TransmuteOptions: private::Sealed
         {}
 
         impl SafeTransmuteOptions for () {}
-        impl UnsafeTransmuteOptions for () {}
+        impl TransmuteOptions for () {}
 
         /// Neglect the stability check of `TransmuteFrom`.
         /* #[lang = "neglect_stability"] */
@@ -1224,16 +1224,16 @@ pub mod transmute {
 
         // Uncomment this if/when constructibility is fully implemented:
         // impl SafeTransmuteOptions for NeglectStability {}
-        impl UnsafeTransmuteOptions for NeglectStability {}
+        impl TransmuteOptions for NeglectStability {}
 
         /*
         pub struct NeglectAlignment;
-        impl UnsafeTransmuteOptions for NeglectAlignment {}
+        impl TransmuteOptions for NeglectAlignment {}
         */
 
         /* FILL: Implementations for tuple combinations of options */
 
-        // prevent third-party implementations of `UnsafeTransmuteOptions`
+        // prevent third-party implementations of `TransmuteOptions`
         mod private {
             use super::*;
 
@@ -1392,7 +1392,7 @@ This safety hazard is not materially different from the one that would be induce
 ##### Recommendation
 We recommend that that implementers of this RFC initially simplify constructability by:
  - adopting our simplified definition of constructability
- - demoting `NeglectStability` to unsafe status (i.e., not implementing `SafeTransmuteOptions` for `NeglectStability`; *only* `UnsafeTransmuteOptions`)
+ - demoting `NeglectStability` to unsafe status (i.e., not implementing `SafeTransmuteOptions` for `NeglectStability`; *only* `TransmuteOptions`)
 
 If and when the implementation of `TransmuteFrom` encodes our complete definition of constructability, `NeglectStability` shall become a safe transmute option.
 
@@ -1978,7 +1978,7 @@ To accomodate this, we may modify the definitions of `PromiseTransmutableFrom` a
 ```rust
 pub trait PromiseTransmutableFrom<Neglect = ()>
 where
-    Neglect: UnsafeTransmuteOptions
+    Neglect: TransmuteOptions
 {
     type Archetype
         : TransmuteInto<Self, Sum<Neglect, NeglectStability>>
@@ -1987,7 +1987,7 @@ where
 
 pub trait PromiseTransmutableInto<Neglect = ()>
 where
-    Neglect: UnsafeTransmuteOptions
+    Neglect: TransmuteOptions
 {
     type Archetype
         : TransmuteFrom<Self, Sum<Neglect, NeglectStability>>
@@ -2399,7 +2399,7 @@ The automatic mechanism proposed by [*Pre-RFC: Safe coercions*][2017-02] exploit
 
 Our RFC exploits the related concept of *constructability*, which is a property of a struct, or enum variant (rather than solely a property of fields). However, we recognize that it may be difficult to test for constructability within the trait resolution process.
 
-The simplified definition of *constructability* we propose is the same employed by [typic][crate-typic] (which uses the term "visibility"). [Typic][crate-typic] regards the pub-in-prive soundness hole of the simplified definition to be sufficiently niche that `NeglectStability` remains "safe". However, unlike [typic][crate-typic], we believe that this simplified definition imposes a safety hazard substantial enough to warrant making `NeglectStability` initially an unsafe transmute option. 
+The simplified definition of *constructability* we propose is the same employed by [typic][crate-typic] (which uses the term "visibility"). [Typic][crate-typic] regards the pub-in-prive soundness hole of the simplified definition to be sufficiently niche that `NeglectStability` remains "safe". However, unlike [typic][crate-typic], we believe that this simplified definition imposes a safety hazard substantial enough to warrant making `NeglectStability` initially usable with *only* unsafe transmutes.
 
 Our RFC separates *constructability*, which concerns what aspects of a type's structure are part of its public API, and *stability*, which concerns the aspects of a type's layout that are part of its public API for SemVer purposes. This distinction does not appear in prior work.
 
@@ -2474,12 +2474,12 @@ The type `[T; 0]` shares the alignment requirements of `T`, but no other layout 
 /// Implemented if `align_of::<Self>() <= align_of::<Rhs>()`
 pub trait AlignLtEq<Rhs, Neglect=()>
 where
-    Neglect: UnsafeTransmuteOptions,
+    Neglect: TransmuteOptions,
 {}
 
 impl<Lhs, Rhs, Neglect> AlignLtEq<Rhs, Neglect> for Lhs
 where
-    Neglect: UnsafeTransmuteOptions,
+    Neglect: TransmuteOptions,
     for<'a> &'a [Lhs; 0]: TransmuteFrom<&'a [Rhs; 0], Neglect>
 {}
 ```
@@ -2488,12 +2488,12 @@ Furthermore, if the alignment of `Self` is less-than-or-equal to `Rhs`, and the 
 /// Implemented if `align_of::<Self>() == align_of::<Rhs>()`
 pub trait AlignEq<Rhs, Neglect=()>
 where
-    Neglect: UnsafeTransmuteOptions,
+    Neglect: TransmuteOptions,
 {}
 
 impl<Lhs, Rhs, Neglect> AlignEq<Rhs, Neglect> for Lhs
 where
-    Neglect: UnsafeTransmuteOptions,
+    Neglect: TransmuteOptions,
     Lhs: AlignLtEq<Rhs, Neglect>,
     Rhs: AlignLtEq<Lhs, Neglect>,
 {}
@@ -2515,12 +2515,12 @@ We use this `Gadget` to define a trait that is implemented if the size of `Self`
 /// Implemented if `size_of::<Self>() <= size_of::<Rhs>()`
 pub trait SizeLtEq<Rhs, Neglect=()>
 where
-    Neglect: UnsafeTransmuteOptions,
+    Neglect: TransmuteOptions,
 {}
 
 impl<Lhs, Rhs, Neglect> SizeLtEq<Rhs, Neglect> for Lhs
 where
-    Neglect: UnsafeTransmuteOptions,
+    Neglect: TransmuteOptions,
     for<'a> &'a Gadget<Rhs, Lhs>: TransmuteFrom<&'a Gadget<Lhs, Rhs>, Neglect>,
 {}
 ```
@@ -2531,12 +2531,12 @@ As before, if the size of `Self` is less-than-or-equal to `Rhs`, and the size of
 /// Implemented if `size_of::<Self>() == size_of::<Rhs>()`
 pub trait SizeEq<Rhs, Neglect=()>
 where
-    Neglect: UnsafeTransmuteOptions,
+    Neglect: TransmuteOptions,
 {}
 
 impl<Lhs, Rhs, Neglect> SizeEq<Rhs, Neglect> for Lhs
 where
-    Neglect: UnsafeTransmuteOptions,
+    Neglect: TransmuteOptions,
     Lhs: SizeLtEq<Rhs, Neglect>,
     Rhs: SizeLtEq<Lhs, Neglect>,
 {}
@@ -2552,7 +2552,7 @@ Indicates that a type may be transmuted into an appropriately-sized array of byt
 ```rust
 pub unsafe trait IntoBytes<Neglect = ()>
 where
-    Neglect: UnsafeTransmuteOptions
+    Neglect: TransmuteOptions
 {}
 
 // `Src` is `IntoBytes` if it can be safely transmuted *into* an
@@ -2560,7 +2560,7 @@ where
 unsafe impl<Src, Neglect> IntoBytes<Options> for Src
 where
     Src: Sized + TransmuteInto<[u8; size_of::<Src>()], Neglect>,
-    Neglect: UnsafeTransmuteOptions
+    Neglect: TransmuteOptions
 {}
 ```
 
@@ -2569,7 +2569,7 @@ Indicates that a type may be transmuted from an appropriately-sized array of byt
 ```rust
 pub unsafe trait FromBytes<Neglect = ()>
 where
-    Neglect: UnsafeTransmuteOptions
+    Neglect: TransmuteOptions
 {}
 
 // `Dst` is `FromBytes` if it can be safely transmuted *from* an
@@ -2577,7 +2577,7 @@ where
 unsafe impl<Dst, Neglect> FromBytes<Options> for Dst
 where
     Dst: Sized + TransmuteFrom<[u8; size_of::<Dst>()], Neglect>,
-    Neglect: UnsafeTransmuteOptions
+    Neglect: TransmuteOptions
 {}
 ```
 
@@ -2589,7 +2589,7 @@ Indicates that a type may be transmuted from an appropriately-sized array of zer
 ```rust
 pub unsafe trait FromZeros<Neglect = ()>
 where
-    Neglect: UnsafeTransmuteOptions
+    Neglect: TransmuteOptions
 {
     /// Safely initialize `Self` from zeroed bytes.
     fn zeroed() -> Self
@@ -2613,7 +2613,7 @@ enum Zero {
 unsafe impl<Dst, Neglect> FromZeros<Options> for Dst
 where
     Dst: Sized + TransmuteFrom<[Zero; size_of::<Dst>()], Neglect>,
-    Neglect: UnsafeTransmuteOptions
+    Neglect: TransmuteOptions
 {
     fn zeroed() -> Self
     where
@@ -2624,7 +2624,7 @@ where
 
     unsafe fn unsafe_zeroed() -> Self
     where
-        Neglect: UnsafeTransmuteOptions
+        Neglect: TransmuteOptions
     {
         [Zero; size_of::<Self>].unsafe_transmute_into()
     }
@@ -2725,7 +2725,7 @@ pub mod vec {
     use core::convert::{
         transmute::{
             TransmuteFrom,
-            options::{SafeTransmuteOptions, UnsafeTransmuteOptions, NeglectAlignment},
+            options::{SafeTransmuteOptions, TransmuteOptions, NeglectAlignment},
         },
         cast::{
             CastFrom,
@@ -2745,7 +2745,7 @@ pub mod vec {
 
     /// Options for casting `Vec<T>` to `Vec<U>`.
     pub trait VecCastOptions
-        : UnsafeTransmuteOptions
+        : TransmuteOptions
         + CastOptions
     {}
 
@@ -2753,7 +2753,7 @@ pub mod vec {
     impl<Neglect: SafeTransmuteOptions> SafeVecCastOptions for Neglect {}
 
     impl<Neglect: VecCastOptions> CastOptions for Neglect {}
-    impl<Neglect: UnsafeTransmuteOptions> VecCastOptions for Neglect {}
+    impl<Neglect: TransmuteOptions> VecCastOptions for Neglect {}
 
 
     use core::mem::{MaybeUninit, SizeEq, AlignEq};
@@ -2781,7 +2781,7 @@ pub mod slice {
     use core::convert::{
         transmute::{
             TransmuteFrom,
-            options::{SafeTransmuteOptions, UnsafeTransmuteOptions},
+            options::{SafeTransmuteOptions, TransmuteOptions},
         },
         cast::{
             CastFrom,
@@ -2807,14 +2807,14 @@ pub mod slice {
     /// Options for casting **slices**.
     pub trait SliceCastOptions
         : CastOptions
-        + UnsafeTransmuteOptions
+        + TransmuteOptions
     {}
 
     impl<Neglect: SafeSliceCastOptions> SafeCastOptions for Neglect {}
     impl<Neglect: SafeTransmuteOptions> SafeSliceCastOptions for Neglect {}
 
     impl<Neglect: SliceCastOptions> CastOptions for Neglect {}
-    impl<Neglect: UnsafeTransmuteOptions> SliceCastOptions for Neglect {}
+    impl<Neglect: TransmuteOptions> SliceCastOptions for Neglect {}
 
 
     impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i [Src], Neglect> for &'o [Dst]
