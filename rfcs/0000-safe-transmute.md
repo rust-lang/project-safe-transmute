@@ -2465,6 +2465,83 @@ The vast majority of users will *only* confront the stability declaration traits
 
 We acknowledge that it is unusual for a `derive` macro to not create an item of the same name, but this weirdness is outweighed by the weirdness of the alternative: providing a trait for which there is almost no good use. 
 
+## Extension: Layout Property Traits
+Given `TransmuteFrom` and `TransmuteInto`, we can construct bounds that check certain properties of a type by checking if its convertible to another, contrived type. These gadgets are useful (see [`Vec` casting](#todo) for an example), and their usefulness could justify adding them to `libcore`—perhaps in the `mem` module.
+
+### Querying Alignment
+The type `[T; 0]` shares the alignment requirements of `T`, but no other layout properties. A type `&[T; 0]` will only be transmutable to `&[U; 0]`, if the minimum alignment of `T` is greater than that of `U`. We exploit this to define a trait that is implemented for `Self` if its alignment is less-than-or-equal to that of `Rhs`:
+```rust
+/// Implemented if `align_of::<Self>() <= align_of::<Rhs>()`
+pub trait AlignLtEq<Rhs, Neglect=()>
+where
+    Neglect: UnsafeTransmuteOptions,
+{}
+
+impl<Lhs, Rhs, Neglect> AlignLtEq<Rhs, Neglect> for Lhs
+where
+    Neglect: UnsafeTransmuteOptions,
+    for<'a> &'a [Lhs; 0]: TransmuteFrom<&'a [Rhs; 0], Neglect>
+{}
+```
+Furthermore, if the alignment of `Self` is less-than-or-equal to `Rhs`, and the alignment of `Rhs` is less-than-or-equal to `Self`, then the alignments of `Self` and `Rhs` must be equal:
+```rust
+/// Implemented if `align_of::<Self>() == align_of::<Rhs>()`
+pub trait AlignEq<Rhs, Neglect=()>
+where
+    Neglect: UnsafeTransmuteOptions,
+{}
+
+impl<Lhs, Rhs, Neglect> AlignEq<Rhs, Neglect> for Lhs
+where
+    Neglect: UnsafeTransmuteOptions,
+    Lhs: AlignLtEq<Rhs, Neglect>,
+    Rhs: AlignLtEq<Lhs, Neglect>,
+{}
+```
+
+### Querying Size
+Querying *just* the size of a type is trickier: how might we query the size without implicitly querying the alignment and validity of the bytes that contribute to that size?
+
+We do so by constructing a contrived container type that neutralizes the alignment and validity aspects of its contents:
+```rust
+#[derive(PromiseTransmutableFrom, PromiseTransmutableInto)] */
+#[repr(C)]
+pub struct Gadget<Align, SizeAlign>(pub [Align; 0], pub MaybeUninit<Size>);
+```
+This type will have the size of `Size`, and alignment equal to the maximum of `Align` and `Size`. `MaybeUninit<Size>` neutralizes the bit-validity qualities of `Size`.
+
+We use this `Gadget` to define a trait that is implemented if the size of `Self` is less-than-or-equal to the size of `Rhs`:
+```rust
+/// Implemented if `size_of::<Self>() <= size_of::<Rhs>()`
+pub trait SizeLtEq<Rhs, Neglect=()>
+where
+    Neglect: UnsafeTransmuteOptions,
+{}
+
+impl<Lhs, Rhs, Neglect> SizeLtEq<Rhs, Neglect> for Lhs
+where
+    Neglect: UnsafeTransmuteOptions,
+    for<'a> &'a Gadget<Rhs, Lhs>: TransmuteFrom<&'a Gadget<Lhs, Rhs>, Neglect>,
+{}
+```
+This works, because `Gadget<Rhs, Lhs>` and `Gadget<Lhs, Rhs>` will have equal alignment, and equal bit-validity (they consist solely of padding bytes). Thus, all that varies between them is their size, and reference transmutations must either preserve or reduce the size of the transmuted type.
+
+As before, if the size of `Self` is less-than-or-equal to `Rhs`, and the size of `Rhs` is less-than-or-equal to `Self`, then the sizes of `Self` and `Rhs` must be equal:
+```rust
+/// Implemented if `size_of::<Self>() == size_of::<Rhs>()`
+pub trait SizeEq<Rhs, Neglect=()>
+where
+    Neglect: UnsafeTransmuteOptions,
+{}
+
+impl<Lhs, Rhs, Neglect> SizeEq<Rhs, Neglect> for Lhs
+where
+    Neglect: UnsafeTransmuteOptions,
+    Lhs: SizeLtEq<Rhs, Neglect>,
+    Rhs: SizeLtEq<Lhs, Neglect>,
+{}
+```
+
 ## Extension: Byte Transmutation Traits
 [marker-traits]: #Extension-Byte-Transmutation-Traits
 
