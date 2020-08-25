@@ -2466,7 +2466,7 @@ The vast majority of users will *only* confront the stability declaration traits
 We acknowledge that it is unusual for a `derive` macro to not create an item of the same name, but this weirdness is outweighed by the weirdness of the alternative: providing a trait for which there is almost no good use. 
 
 ## Extension: Layout Property Traits
-Given `TransmuteFrom` and `TransmuteInto`, we can construct bounds that check certain properties of a type by checking if its convertible to another, contrived type. These gadgets are useful (see [`Vec` casting](#todo) for an example), and their usefulness could justify adding them to `libcore`—perhaps in the `mem` module.
+Given `TransmuteFrom` and `TransmuteInto`, we can construct bounds that check certain properties of a type by checking if its convertible to another, contrived type. These gadgets are useful (see [`Vec` casting][ext-vec-casting] for an example), and their usefulness could justify adding them to `libcore`—perhaps in the `mem` module.
 
 ### Querying Alignment
 The type `[T; 0]` shares the alignment requirements of `T`, but no other layout properties. A type `&[T; 0]` will only be transmutable to `&[U; 0]`, if the minimum alignment of `T` is greater than that of `U`. We exploit this to define a trait that is implemented for `Self` if its alignment is less-than-or-equal to that of `Rhs`:
@@ -2631,155 +2631,227 @@ where
 }
 ```
 
-## Extension: Slice Casting
-[ext-slice-casting]: #extension-slice-casting
+## Extension: Casting
+[ext-slice-casting]: #extension-casting
+Given `TransmuteFrom`, we can construct safe abstractions for casts of slices and `Vec`s that effectively transmute the *contents* of those types.
 
-Transmuting the contained type of a slice is a [common operation](https://internals.rust-lang.org/t/safe-trasnsmute-for-slices-e-g-u64-u32-particularly-simd-types/2871) in cryptography and fast packet parsing. Although this RFC does not propose the addition of a concrete method for slice casting, the mechanisms proposed in this RFC make possible sound and complete slice casting abstractions; e.g.:
+### Slice Casting
+A slice cast is an operation that consumes `&'i [Src]` and produces `&'o [Dst]`. This conversion has both static and dynamic components. The length of a `&'i [Src]` is a dynamic quality of values of that type. If ths static sizes of `Src` and `Dst` differ, the length of `&'o [Dst]` will need to differ from that of `&'i [Src]` accordingly. The static component of this conversion is whether the layouts of `Src` and `Dst` even permit such a conversion---we can use `TransmuteFrom` to answer this: *Could a reference to a maximally-long array of `Src` be transmuted to an array of just one `Dst`?*
+
+Concretely:
+```rust
+fn cast<'i, 'o, Src, Dst>(src: &'i [Src]) -> &'o [Dst]
+where
+    &'o [Dst; 1]: TransmuteFrom<&'i [Src; usize::MAX]>
+{
+    let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
+    unsafe { slice::from_raw_parts(src.as_ptr() as *const Dst, len) }
+}
+```
+
+### `Vec` Casting
+[ext-vec-casting]: #vec-casting
+
+The invariants imposed by [`Vec::from_raw_parts`](https://doc.rust-lang.org/alloc/vec/struct.Vec.html#method.from_raw_parts) are far stricter than those imposed by [`slice::from_raw_parts`](https://doc.rust-lang.org/core/slice/fn.from_raw_parts.html): we may only convert a `Vec<T>` to `Vec<U>` if:
+
+  - `U` is transmutable from `T`
+  - `U` has the same size as `T`
+  - `U` has the same static alignment as `T`
+
+Concretely:
+```rust
+fn cast<Src, Dst>(src: Vec<Src>) -> Vec<Dst>
+where
+    Dst: TransmuteFrom<Src>
+       + AlignEq<Src>,
+       + SizeEq<Src>,
+{
+    let (ptr, len, cap) = src.into_raw_parts();
+    unsafe { Vec::from_raw_parts(ptr as *mut Dst, len, cap) }
+}
+```
+
+### Cast Ergonomics
+The above `cast` functions have a major ergonomic drawback: they require callers to reiterate their `where` bounds. The bounds that determine the castability of a type is more ergonomically encapsulated with a *single* trait bound whose name clearly communicates that casting is possible.
+
+Mirroring the design of `TransmuteFrom`, this *could* take the form of a `CastFrom` trait:
 ```rust
 pub mod cast {
 
-    #[marker] pub trait SafeCastOptions: UnsafeCastOptions {}
-    #[marker] pub trait UnsafeCastOptions {}
-
-    impl SafeCastOptions for () {}
-    impl UnsafeCastOptions for () {}
-
-    pub trait CastInto<Dst, Neglect=()>
-    where
-        Dst: CastFrom<Self, Neglect>,
-        Neglect: UnsafeCastOptions,
-    {
-        fn cast_into(self) -> Dst
-        where
-            Self: Sized,
-            Dst: Sized,
-            Neglect: SafeCastOptions,
-        {
-            CastFrom::<_, Neglect>::cast_from(self)
-        }
-
-        unsafe fn unsafe_cast_into(self) -> Dst
-        where
-            Self: Sized,
-            Dst: Sized,
-            Neglect: UnsafeCastOptions,
-        {
-            CastFrom::<_, Neglect>::unsafe_cast_from(self)
-        }
-    }
-
-    impl<Src, Dst, Neglect> CastInto<Dst, Neglect> for Src
-    where
-        Dst: CastFrom<Self, Neglect>,
-        Neglect: UnsafeCastOptions,
-    {}
-
+    /// Instantiate `Self` from a value of type `Src`.
+    ///
+    /// The reciprocal of [CastInto].
     pub trait CastFrom<Src: ?Sized, Neglect=()>
     where
-        Neglect: UnsafeCastOptions,
+        Neglect: options::CastOptions,
     {
+        /// Instantiate `Self` by casting a value of type `Src`, safely.
         fn cast_from(src: Src) -> Self
         where
             Src: Sized,
             Self: Sized,
-            Neglect: SafeCastOptions
+            Neglect: options::SafeCastOptions
         {
             unsafe { CastFrom::<_,Neglect>::unsafe_cast_from(src) }
         }
 
+        /// Instantiate `Self` by casting a value of type `Src`, potentially safely.
         unsafe fn unsafe_cast_from(src: Src) -> Self
         where
             Src: Sized,
             Self: Sized,
-            Neglect: UnsafeCastOptions;
+            Neglect: options::CastOptions;
     }
 
-    /// Options for casting the contents of slices.
-    pub mod slice {
-        use super::{
-            CastFrom,
-            SafeCastOptions,
-            UnsafeCastOptions,
-            super::transmute::{
-                TransmuteFrom,
-                options::{SafeTransmuteOptions, UnsafeTransmuteOptions},
-            },
-        };
+    /// Options for casting.
+    pub mod options {
 
-        use core::{
-            mem::{size_of, size_of_val},
-            slice
-        };
+        /// The super-trait of all *safe* casting options.
+        #[marker] pub trait SafeCastOptions: CastOptions {}
 
-        /// All `SafeTransmuteOptions` are `SafeSliceCastOptions`.
-        pub trait SafeSliceCastOptions
-            : SafeCastOptions
-            + SafeTransmuteOptions
-            + UnsafeSliceCastOptions
-        {}
+        /// The super-trait of all casting options.
+        #[marker] pub trait CastOptions {}
 
-        /// All `UnsafeTransmuteOptions` are `UnsafeSliceCastOptions`.
-        pub trait UnsafeSliceCastOptions
-            : UnsafeCastOptions
-            + UnsafeTransmuteOptions
-        {}
-
-        impl<Neglect: SafeTransmuteOptions> SafeCastOptions for Neglect {}
-        impl<Neglect: SafeTransmuteOptions> SafeSliceCastOptions for Neglect {}
-        impl<Neglect: UnsafeTransmuteOptions> UnsafeCastOptions for Neglect {}
-        impl<Neglect: UnsafeTransmuteOptions> UnsafeSliceCastOptions for Neglect {}
-
-        /// Convert `&[Src]` to `&[Dst]`
-        impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i [Src], Neglect> for &'o [Dst]
-        where
-            Neglect: UnsafeSliceCastOptions,
-            &'o [Dst; size_of::<Src>()]: TransmuteFrom<&'i [Src; size_of::<Dst>()], Neglect>
-        {
-            unsafe fn unsafe_cast_from(src: &'i [Src]) -> &'o [Dst]
-            where
-                Neglect: UnsafeSliceCastOptions,
-            {
-                let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
-                unsafe { slice::from_raw_parts(src.as_ptr() as *const Dst, len) }
-            }
-        }
-
-        /// Convert `&mut [Src]` to `&mut [Dst]`
-        impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i mut [Src], Neglect> for &'o mut [Dst]
-        where
-            Neglect: UnsafeSliceCastOptions,
-            &'o mut [Dst; size_of::<Src>()]: TransmuteFrom<&'i mut [Src; size_of::<Dst>()], Neglect>
-        {
-            unsafe fn unsafe_cast_from(src: &'i mut [Src]) -> &'o mut [Dst]
-            where
-                Neglect: UnsafeSliceCastOptions,
-            {
-                let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
-                unsafe { slice::from_raw_parts_mut(src.as_ptr() as *mut Dst, len) }
-            }
-        }
-
-        /// Convert `&mut [Src]` to `&[Dst]`
-        impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i mut [Src], Neglect> for &'o [Dst]
-        where
-            Neglect: UnsafeSliceCastOptions,
-            &'o mut [Dst; size_of::<Src>()]: TransmuteFrom<&'i [Src; size_of::<Dst>()], Neglect>
-        {
-            unsafe fn unsafe_cast_from(src: &'i mut [Src]) -> &'o [Dst]
-            where
-                Neglect: UnsafeSliceCastOptions,
-            {
-                let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
-                unsafe {
-                    slice::from_raw_parts(src.as_ptr() as *const Dst, len)
-                }
-            }
-        }
+        impl SafeCastOptions for () {}
+        impl CastOptions for () {}
 
     }
 }
 ```
-Note that `TransmuteFrom` is used as trait bound to ensure safety, but the `transmute_from()` method isn't actually called.
+...which might then be implemented like so for `Vec`:
+```rust
+/// A contiguous growable array type with heap-allocated contents, `Vec<T>`.
+pub mod vec {
+    use core::convert::{
+        transmute::{
+            TransmuteFrom,
+            options::{SafeTransmuteOptions, UnsafeTransmuteOptions, NeglectAlignment},
+        },
+        cast::{
+            CastFrom,
+            options::{
+                SafeCastOptions,
+                CastOptions,
+            },
+        },
+    };
+
+    /// Safe options for casting `Vec<T>` to `Vec<U>`.
+    pub trait SafeVecCastOptions
+        : SafeCastOptions
+        + SafeTransmuteOptions
+        + VecCastOptions
+    {}
+
+    /// Options for casting `Vec<T>` to `Vec<U>`.
+    pub trait VecCastOptions
+        : UnsafeTransmuteOptions
+        + CastOptions
+    {}
+
+    impl<Neglect: SafeVecCastOptions> SafeCastOptions for Neglect {}
+    impl<Neglect: SafeTransmuteOptions> SafeVecCastOptions for Neglect {}
+
+    impl<Neglect: VecCastOptions> CastOptions for Neglect {}
+    impl<Neglect: UnsafeTransmuteOptions> VecCastOptions for Neglect {}
+
+
+    use core::mem::{MaybeUninit, SizeEq, AlignEq};
+
+    impl<Src, Dst, Neglect> CastFrom<Vec<Src>, Neglect> for Vec<Dst>
+    where
+        Neglect: VecCastOptions,
+        Dst: TransmuteFrom<Src, Neglect>
+           + AlignEq<Src, Neglect>
+           + SizeEq<Src, Neglect>,
+    {
+        #[doc(hidden)]
+        #[inline(always)]
+        unsafe fn unsafe_cast_from(src: Vec<Src>) -> Vec<Dst>
+        {
+            let (ptr, len, cap) = src.into_raw_parts();
+            Vec::from_raw_parts(ptr as *mut Dst, len, cap)
+        }
+    }
+}
+```
+...and like this for slices:
+```rust
+pub mod slice {
+    use core::convert::{
+        transmute::{
+            TransmuteFrom,
+            options::{SafeTransmuteOptions, UnsafeTransmuteOptions},
+        },
+        cast::{
+            CastFrom,
+            options::{
+                SafeCastOptions,
+                CastOptions,
+            },
+        },
+    };
+
+    use core::{
+        mem::{size_of, size_of_val},
+        slice
+    };
+
+    /// *Safe* options for casting **slices**.
+    pub trait SafeSliceCastOptions
+        : SafeCastOptions
+        + SafeTransmuteOptions
+        + SliceCastOptions
+    {}
+
+    /// Options for casting **slices**.
+    pub trait SliceCastOptions
+        : CastOptions
+        + UnsafeTransmuteOptions
+    {}
+
+    impl<Neglect: SafeSliceCastOptions> SafeCastOptions for Neglect {}
+    impl<Neglect: SafeTransmuteOptions> SafeSliceCastOptions for Neglect {}
+
+    impl<Neglect: SliceCastOptions> CastOptions for Neglect {}
+    impl<Neglect: UnsafeTransmuteOptions> SliceCastOptions for Neglect {}
+
+
+    impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i [Src], Neglect> for &'o [Dst]
+    where
+        Neglect: SliceCastOptions,
+        &'o [Dst; 1]: TransmuteFrom<&'i [Src; usize::MAX], Neglect>
+    {
+        unsafe fn unsafe_cast_from(src: &'i [Src]) -> &'o [Dst]
+        {
+            let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
+            unsafe { slice::from_raw_parts(src.as_ptr() as *const Dst, len) }
+        }
+    }
+
+    impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i mut [Src], Neglect> for &'o mut [Dst]
+    where
+        Neglect: SliceCastOptions,
+        &'o mut [Dst; 1]: TransmuteFrom<&'i mut [Src; usize::MAX], Neglect>
+    {
+        unsafe fn unsafe_cast_from(src: &'i mut [Src]) -> &'o mut [Dst]
+        {
+            let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
+            unsafe { slice::from_raw_parts_mut(src.as_ptr() as *mut Dst, len) }
+        }
+    }
+
+    impl<'i, 'o, Src, Dst, Neglect> CastFrom<&'i mut [Src], Neglect> for &'o [Dst]
+    where
+    {
+        unsafe fn unsafe_cast_from(src: &'i mut [Src]) -> &'o [Dst]
+        {
+            let len = size_of_val(src).checked_div(size_of::<Dst>()).unwrap_or(0);
+            unsafe { slice::from_raw_parts(src.as_ptr() as *const Dst, len) }
+        }
+    }
+}
+```
 
 ## Extension: `include_data!`
 [future-possibility-include_data]: #Extension-include_data
@@ -2805,8 +2877,8 @@ pub fn recognize(input: &Matrix<f64, U1, U784>) -> usize
 }
 ```
 
-## Extension: Reference Casting
-[ext-ref-casting]: #Extension-Reference-Casting
+## Possibility: Reference Casting
+[ext-ref-casting]: #possibility-Reference-Casting
 ```rust
 /// Try to convert a `&T` into `&U`.
 ///
@@ -2826,8 +2898,8 @@ where
 }
 ```
 
-## Extension: Generic Atomics
-[future-possibility-generic-atomics]: #extension-generic-atomics
+## Possibility: Generic Atomics
+[future-possibility-generic-atomics]: #possibility-generic-atomics
 
 ```rust
 type LargestPlatformAtomic = u64;
