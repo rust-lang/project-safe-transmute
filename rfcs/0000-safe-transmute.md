@@ -2236,8 +2236,17 @@ Finally, community-led, crate-based approaches are, inescapably, unauthoritative
 [2019-12-05-v2]: https://internals.rust-lang.org/t/pre-rfc-v2-safe-transmute/11431
 [2020-07]: https://internals.rust-lang.org/t/pre-rfc-explicit-opt-in-oibit-for-truly-pod-data-and-safe-transmutes/2361
 
-
 ## Dimensions of Variation
+[dimensions-of-variation]: #dimensions-of-variation
+
+A handful of dimensions of variation charactarize the distinctions between prior art:
+  - conversion complexity
+  - conversion fallibility
+  - source and destination types supported
+  - implementation mechanism
+  - stability hazards
+
+We review each of these dimensions in turn, along with this proposal's location along these dimensions:
 
 ### Conversion Complexity
 Prior work differs in whether it supports complex conversions, or only simple transmutation. [*Pre-RFC FromBits/IntoBits*][2018-03]'s proposed traits include conversion methods that are implemented by type authors. Because end-users provide their own definitions of these methods, they can be defined to do more than just transmutation (e.g., slice casting). (This approach is similar to the [uncon][crate-uncon] crate's [`FromUnchecked`](https://docs.rs/uncon/1.*/uncon/trait.FromUnchecked.html) and [`IntoUnchecked`](https://docs.rs/uncon/1.*/uncon/trait.IntoUnchecked.html) traits, which provide unsafe conversions between types. These traits are safe to implement, but their conversion methods are not.)
