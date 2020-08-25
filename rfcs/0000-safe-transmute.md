@@ -2645,6 +2645,37 @@ where
 }
 ```
 
+### Removing the Dependency on Const Generics
+The obvious implementations of these traits depends on constructing arrays of length `size_of::<Self>()`. At the time of writing, this is not permitted by const generics. Can we construct formulations that do not rely on speculative advancements in const generics?
+
+#### Alternative `FromBytes`
+```rust
+unsafe impl<Dst> FromBytes for Dst
+where
+    Dst: TransmuteFrom<[u8; usize::MAX]>,
+{}
+```
+This bound works because `[u8; usize::MAX]` will be greater-than-or-equal to the maximum object size (i.e., the maximum *possible* size of `Dst`), and because transmutations of values may truncate the source bytes. 
+
+#### Alternative `IntoBytes`
+```rust
+unsafe impl<Src> IntoBytes for Src
+where
+    [Src: usize::MAX]: TransmuteInto<[u8; usize::MAX]>,
+{}
+```
+Unless `Src` is a zero-sized type, its size will be greater-than-or-equal-to the size of a `u8` (1).
+
+This breaks down in two scenarios. First, if the size of `Src` is greater than `[u8; usize::MAX]`, then the transmutability of `Src`'s excess bytes will not be assessed. This is impossible: `[u8; usize::MAX]` will be greater-than-or-equal to the maximum object size. Second, if `Src` is a zero-sized-type, this bound will not be satisfied: we cannot construct a `[u8; usize::MAX]` from nothing.
+
+If `IntoBytes` is declared as a `#[marker]` trait, we could cover this scenario with:
+```rust
+unsafe impl<Src> IntoBytes for Src
+where
+    Src: SizeEq<()>,
+{}
+```
+
 ## Extension: Casting
 [ext-slice-casting]: #extension-casting
 Given `TransmuteFrom`, we can construct safe abstractions for casts of slices and `Vec`s that effectively transmute the *contents* of those types.
