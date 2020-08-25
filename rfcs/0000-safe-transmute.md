@@ -2409,7 +2409,7 @@ The automatic mechanism proposed by [*Pre-RFC: Safe coercions*][2017-02] exploit
 
 Our RFC exploits the related concept of *constructability*, which is a property of a struct, or enum variant (rather than solely a property of fields). However, we recognize that it may be difficult to test for constructability within the trait resolution process.
 
-The simplified definition of *constructability* we propose is the same employed by [typic][crate-typic] (which uses the term "visibility"). [Typic][crate-typic] regards the pub-in-prive soundness hole of the simplified definition to be sufficiently niche that `NeglectStability` remains "safe". However, unlike [typic][crate-typic], we believe that this simplified definition imposes a safety hazard substantial enough to warrant making `NeglectStability` initially usable with *only* unsafe transmutes.
+The simplified definition of *constructability* we propose is the same employed by [typic][crate-typic] (which uses the term "visibility"). [Typic][crate-typic] regards the pub-in-priv soundness hole of the simplified definition to be sufficiently niche that `NeglectStability` remains "safe". However, unlike [typic][crate-typic], we believe that this simplified definition imposes a safety hazard substantial enough to warrant making `NeglectStability` initially usable with *only* unsafe transmutes.
 
 Our RFC separates *constructability*, which concerns what aspects of a type's structure are part of its public API, and *stability*, which concerns the aspects of a type's layout that are part of its public API for SemVer purposes. This distinction does not appear in prior work.
 
