@@ -2515,7 +2515,7 @@ We do so by constructing a contrived container type that neutralizes the alignme
 ```rust
 #[derive(PromiseTransmutableFrom, PromiseTransmutableInto)] */
 #[repr(C)]
-pub struct Gadget<Align, SizeAlign>(pub [Align; 0], pub MaybeUninit<Size>);
+pub struct Gadget<Align, Size>(pub [Align; 0], pub MaybeUninit<Size>);
 ```
 This type will have the size of `Size`, and alignment equal to the maximum of `Align` and `Size`. `MaybeUninit<Size>` neutralizes the bit-validity qualities of `Size`.
 
