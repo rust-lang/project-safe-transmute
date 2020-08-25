@@ -1393,6 +1393,7 @@ This safety hazard is not materially different from the one that would be induce
 We recommend that that implementers of this RFC initially simplify constructability by:
  - adopting our simplified definition of constructability
  - demoting `NeglectStability` to unsafe status (i.e., not implementing `SafeTransmuteOptions` for `NeglectStability`; *only* `TransmuteOptions`)
+ - advise users that implementing the stability declaration traits on types that are not fully-implicitly constructable will be a compiler-error will be a compiler error (i.e., these traits must not be implemented on types exploiting the pub-in-priv trick)
 
 If and when the implementation of `TransmuteFrom` encodes our complete definition of constructability, `NeglectStability` shall become a safe transmute option.
 
