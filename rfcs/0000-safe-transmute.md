@@ -2664,8 +2664,6 @@ where
     [Src: usize::MAX]: TransmuteInto<[u8; usize::MAX]>,
 {}
 ```
-Unless `Src` is a zero-sized type, its size will be greater-than-or-equal-to the size of a `u8` (1).
-
 This breaks down in two scenarios. First, if the size of `Src` is greater than `[u8; usize::MAX]`, then the transmutability of `Src`'s excess bytes will not be assessed. This is impossible: `[u8; usize::MAX]` will be greater-than-or-equal to the maximum object size. Second, if `Src` is a zero-sized-type, this bound will not be satisfied: we cannot construct a `[u8; usize::MAX]` from nothing.
 
 If `IntoBytes` is declared as a `#[marker]` trait, we could cover this scenario with:
