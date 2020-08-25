@@ -2444,6 +2444,10 @@ The omission is intentional. The consequences of such an option are suprising in
 # Future possibilities
 [future-possibilities]: #future-possibilities
 
+We divide future possibilities into two categories:
+  - *extensions*, which are highly-developed,
+  - *possibilities*, which sketch an idea.
+
 ## Extension: `PromiseTransmutable` Shorthand
 [extension-promisetransmutable-shorthand]: #extension-promisetransmutable-shorthand
 
@@ -2888,6 +2892,8 @@ pub fn recognize(input: &Matrix<f64, U1, U784>) -> usize
 
 ## Possibility: Reference Casting
 [ext-ref-casting]: #possibility-Reference-Casting
+
+The ability to neglect static checks should make possible [bytemuck][crate-bytemuck]-style fallible casts; e.g.: 
 ```rust
 /// Try to convert a `&T` into `&U`.
 ///
@@ -2910,13 +2916,14 @@ where
 ## Possibility: Generic Atomics
 [future-possibility-generic-atomics]: #possibility-generic-atomics
 
+With much additional effort, this proposal could provide a basis for truly a truly generic `Atomic` type: 
+
 ```rust
 type LargestPlatformAtomic = u64;
 
 pub struct Atomic<T>
 where
-    // ensures that size_of::<T>() <= size_of::<u64>():
-    MaybeUninit<T>: TransmuteFrom<LargestPlatformAtomic>
+    T: SizeLtEq<LargestPlatformAtomic>
 {
     v: UnsafeCell<T>
 }
