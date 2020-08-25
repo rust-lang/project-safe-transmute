@@ -632,7 +632,7 @@ Since the `u8` field is private, its valid values are assumed to be constrained 
 You may freely increase the required alignment of your type to any value greater-than-or-equal to the required alignment of your archetype. The minimum alignment requirement permitted by Rust is 1.
 
 ###### Archetype Size
-You may decrease the size of your type without violating stability to any size less-than-or-equal to the size of your archetype. The minimum size of types in Rust is 0.
+You may increase the size of your type without violating stability to any size greater-than-or-equal to the size of your archetype. The minimum size of types in Rust is 0.
 
 ###### Archetype Validity & Visibility
 You may freely make your type more constructible (in terms of both visibility and theoretical validity) than your archetype. A minimally-informative archetype may be constructed using `MaybeUninit<u8>` as a building-block, since *any* possible instantiation of a byte is a valid instantiation of `MaybeUninit<u8>`.
