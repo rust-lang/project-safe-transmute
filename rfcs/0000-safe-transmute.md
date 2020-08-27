@@ -1,6 +1,6 @@
-# Safe Transmute RFC
+# Safer Transmute RFC
 
-- Feature Name: `safe_transmute`
+- Feature Name: `safer_transmute`
 - Start Date: (fill me in with today's date, YYYY-MM-DD)
 - RFC PR: [rust-lang/rfcs#0000](https://github.com/rust-lang/rfcs/pull/0000)
 - Rust Issue: [rust-lang/rust#0000](https://github.com/rust-lang/rust/issues/0000)
@@ -40,12 +40,21 @@ let _ : u32 = Foo(16, 12).transmute_into(); // Compile Error!
 # Motivation
 [motivation]: #motivation
 
-We foresee a range of practical consequences of fulfilling these goals, including [making unsafe Rust safer](#making-unsafe-rust-safer), providing [safer initialization primitives](#safer-initialization-primitives), and [generic atomics](#atomict). We explore these use-cases, and more, in this section.
+Byte-reinterpretation conversions (such as those performed by `mem::transmute`, `mem::transmute_copy`, pointer casts, and `union`s) are invaluable in high performance contexts, are `unsafe`, and easy to get wrong. This RFC provides mechanisms that make many currently-unsafe transmutations entirely safe. For transmutations that are not entirely safe, this RFC's mechanisms make mistakes harder to make.
 
-A *comprehensive* approach to safe transmutation provides benefits beyond the mere act of transmutation; namely:
+This RFC's comprehensive approach provides additional benefits beyond the mere act of transmutation; namely:
  - [authoritatively codifies language layout guarantees](#codifying-language-layout-guarantees)
  - [allows crate authors to codify their types' layout stability guarantees](#expressing-library-layout-guarantees)
  - [allows crate authors to codify their abstractions' layout requirements](#expressing-layout-requirements)
+
+Given the expressive foundation provided by this RFC, we also envision a range of future possibilities that will *not* require additional compiler support, including:
+ - [safe slice and `Vec` casting](0000-ext-container-casting.md)
+ - [a unified, generic `Atomic<T>` type](0000-ext-generic-atomic.md)
+ - [a safe, generic alternative to `include_bytes!`](0000-ext-include-data.md)
+ - [traits for asserting the size and alignment relationships of types](0000-ext-layout-traits.md)
+ - [zerocopy-style traits for safe initialization](0000-ext-byte-transmutation.md)
+ - [bytemuck-style mechanisms for fallible reference casting][ext-ref-casting]
+
 
 ## Codifying Language Layout Guarantees
 Documentation of Rust's layout guarantees for a type are often spread across countless issues, pull requests, RFCs and various official resources. It can be very difficult to get a straight answer. When transmutation is involved, users must reason about the *combined* layout properties of the source and destination types.
@@ -64,122 +73,7 @@ Similarly, there is no canonical way for crate authors to declare the layout req
 
 For instance, a common bit-packing technique involves abusing the relationship between allocations and alignment. If a type is aligned to 2<sup>n</sup>, then the *n* least significant bits of pointers to that type will equal `0`. These known-zero bits can be packed with data. Since alignment cannot be currently reasoned about at the type-level, it's currently impossible to bound instantiations of a generic parameter based on minimum alignment.
 
-The mechanisms proposed by the RFC enable this. We return to this example near the end of the RFC, [here][case-study-alignment].
-
-## Making Unsafe Rust Safer
-[motivation-safer-unsafe]: #Making-Unsafe-Rust-Safer
-In the blog post [*Unsafe Zig is Safer than Unsafe Rust*](https://andrewkelley.me/post/unsafe-zig-safer-than-unsafe-rust.html), Andrew Kelley asks readers to consider the following Rust code:
-
-```rust
-struct Foo {
-    a: i32,
-    b: i32,
-}
-
-fn main() {
-    unsafe {
-        let mut array: [u8; 1024] = [1; 1024];
-        let foo = mem::transmute::<&mut u8, &mut Foo>(&mut array[0]);
-        foo.a += 1;
-    }
-}
-```
-This pattern, Kelley notes, is common when interacting with operating system APIs.
-
-This Rust program compiles, but quietly introduces undefined behavior. `Foo` requires stricter in-memory alignment than `u8`. The equivalent code in Zig produces a compiler error for this reason and requires modification.
-
-And that's not all: Kelley misses that the very layout of `Foo` itself is undefined⁠—it must be annotated with `#[repr(C)]`!
-
-Kelley concludes:
-> In Zig the problem of alignment is solved completely; the compiler catches all possible alignment issues. In the situation where you need to assert to the compiler that something is more aligned than Zig thinks it is, you can use `@alignCast`. This inserts a cheap safety check in debug mode to make sure the alignment assertion is correct.
-
-This situation is frustrating. Like `zig`, `rustc` *knows* the layout of `Foo`, it *knows* that the layout of `Foo` is unspecified because it lacks the `#[repr(C)]` attribute, and it *knows* the minimum alignment requirements of `Foo` are stricter than that of `u8`. Why doesn't it also help us avoid UB?
-
-This RFC proposes mechanisms that use this information to enable safer transmutation. We revisit Kelley's motivating example with these proposed mechanisms near the end of this RFC, [*here*][case-study-safer-unsafe].
-
-## Efficient Parsing
-In languages like C or C++, a common technique for parsing structured data such as network packets or file formats is to declare a type whose fields correspond to the fields of the data being parsed. An input byte array is then parsed by casting a pointer to the array (e.g., `a char *`) to a pointer to the typed representation (e.g., `udp_header_t *`). It is the programmer's responsibility to avoid the many pitfalls that could introduce undefined behavior when using this pattern.
-
-In Rust, we might employ the same technique:
-```rust
-struct UdpHeader {
-    src_port: u16,
-    dst_port: u16,
-    length:   u16,
-    checksum: [u8; 2],
-}
-```
-However, as it stands today, it is still the programmer's responsibility to ensure that a conversion such as `&[u8]` to `&UdpHeader` is sound. In the above example, we can see a number of pitfalls that a programmer must know to avoid:
-  - The layout of `UdpHeader` is undefined without `#[repr(C)]`
-  - The conversion of `&[u8]` to `&UdpHeader` is invalid in the general case because the length of the byte slice must be sufficient
-  - The conversion of `&[u8]` to `&UdpHeader` is invalid in the general case because the alignment of the byte slice must be sufficient (the alignment issue can be avoided by replacing the `u16` fields with `[u8; 2]`)
-
-This RFC proposes mechanisms that would allow to perform this reference conversion safely, and would fail compilation if any of the above pitfalls were encountered. We revisit this example [here][case-study-parsing].
-
-
-## Safer Initialization Primitives
-The initialization primitives `mem::zeroed<T>` and `mem::uninitialized<T>` are `unsafe` because they may be used to initialize types for which zeroed or uninitialized memory are *not* valid bit-patterns. The `mem::zeroed` function recently gained a dynamically-enforced validity check, but this safety measure isn't wholly satisfactory: the validity properties of `T` are statically known, but the check is dynamic.
-
-This RFC proposes mechanisms that would allow these functions to explicitly bound their generic parameter `T` based on its validity properties. We revisit this motivating use-case with our proposed mechanisms near the end of this RFC, [*here*][future-possibility-safe-initialization].
-
-## Including Structured Data
-[motivation-including-data]: #Including-Structured-Data
-
-[`include_bytes`]: https://doc.rust-lang.org/core/macro.include_bytes.html
-
-The [`include_bytes`] macro statically includes the contents of another file as a byte array, producing a value of type `&'static [u8; N]`. Often, these bytes correspond to structured data and a `transmute` must be used to deserialize the bytes into useful form; e.g.:
-```rust
-pub fn recognize(input: &Matrix<f64, U1, U784>) -> usize
-{
-    static RAW_WEIGHT : &'static [u8; 62_720] = include_bytes!("/weight.bin");
-
-    static RAW_BIAS : &'static [u8; 80] = include_bytes!("/bias.bin");
-
-    let WEIGHT: &Matrix<f64, U784, U10> = unsafe{ mem::transmute(RAW_WEIGHT) };
-
-    let BIAS: &Matrix<f64, U1, U10> = unsafe{ mem::transmute(RAW_BIAS) };
-
-    network::recognize(input, WEIGHT, BIAS)
-}
-```
-
-This RFC proposes mechanisms that would eliminate `unsafe` in this example. We revisit this motivating use-case with our proposed mechanisms near the end of this RFC, [*here*][future-possibility-include_data].
-
-
-## SIMD
-***TODO:*** This might be helpful: https://internals.rust-lang.org/t/pre-rfc-frombits-intobits/7071
-
-
-## `Atomic<T>`
-Rust defines a dozen `Atomic*` types (`AtomicBool`, `AtomicI8`, `AtomicI16`, `AtomicI32`, `AtomicI64`, `AtomicIsize`, `AtomicPtr`, `AtomicU8`, `AtomicU16`, `AtomicU32`, `AtomicU64`, and `AtomicUsize`).
-
-This set is large—a distinct `Atomic*` type is required for each primitive type—but incomplete. If one wants atomic operations on their own type, they must define a wrapper around an existing `Atomic*` type of appropriate size and validity, then transmute at API boundaries; e.g.:
-
-```rust
-#[repr(u8)]
-enum Trilean {
-    False,
-    True,
-    Unknown,
-}
-
-#[repr(transparent)]
-pub AtomicTrilean(AtomicU8);
-
-impl AtomicTrilean {
-
-    pub const fn new(v: Trilean) -> Self {
-        AtomicTrilean(
-          AtomicU8::new(
-            unsafe { mem::transmute(v) }
-          ))
-    }
-
-    ...
-}
-```
-
-The mechanisms proposed by this RFC would eliminate this pattern, permitting truly generic `Atomic` types. We revisit this motivating use-case with these proposed mechanisms near the end of this RFC, [*here*][future-possibility-generic-atomics].
+The mechanisms proposed by the RFC enable this, see [here](0000-ext-layout-traits.md).
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -2018,155 +1912,6 @@ Writing *both* impls (as we do above) is logically nonsense, but is nonetheless 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-## Case Studies
-
-### Case Study: Making Unsafe Rust Safer
-[case-study-safer-unsafe]: #Case-Study-Making-Unsafe-Rust-Safer
-
-This RFC proposes mechanisms for safe transmutation and safer *unsafe* transmutation. How might [Kelley's motivating example][motivation-safer-unsafe] change in light of these mechanisms?
-
-#### Safer Unsafe
-For the compiler to accept a use of `unsafe_transmute`, we must:
-   - use `unsafe_transmute` with the `NeglectAlignment` option
-   - annotate `Foo` with `#[repr(C)]` so its layout is defined
-   - annotate `Foo` with `#[derive(PromiseTransmutableFrom,PromiseTransmutableInto)]` to indicate its layout is library-stable (alternatively, we could also use the  `NeglectStability` option)
-
-The sum of these changes:
-```rust
-use core::transmute::{
-    unsafe_transmute,
-    options::NeglectAlignment,
-    stability::FixedLayout,
-};
-
-
-#[derive(PromiseTransmutableFrom, PromiseTransmutableInto)]
-#[repr(C)]
-pub struct Foo {
-    a: i32,
-    b: i32,
-}
-
-fn main() {
-    let mut array: [u8; 1024] = [1; 1024];
-
-    let mut foo = unsafe {
-        // check alignment ourselves
-        assert_eq!((src as *const u8 as usize) % align_of::<Foo>(), 0);
-
-        // transmute `&mut array` to `&mut Foo`
-        // permitted becasue we promise to check the alignment ourselves
-        let foo = unsafe_transmute::<&mut [u8; 1024], &mut Foo, NeglectAlignment>(&mut array);
-    };
-
-    foo.a += 1;
-}
-```
-
-#### No Unsafe Needed!
-Better yet, we may use a completely *safe* transmute if we statically align the byte array:
-
-```rust
-use core::transmute::{
-    TransmuteInto,
-    options::NeglectAlignment,
-    stability::FixedLayout,
-};
-
-
-#[derive(PromiseTransmutableFrom, PromiseTransmutableInto)]
-#[repr(C)]
-struct Foo {
-    a: i32,
-    b: i32,
-}
-
-#[derive(PromiseTransmutableFrom, PromiseTransmutableInto)]
-#[repr(C, align(4)]
-struct Aligned([u8; 1024]);
-
-fn main() {
-    let mut array: Aligned = Aligned([1; 1024]);
-
-    let foo : &mut Foo = (&mut array[0]).transmute_into();
-
-    foo.a += 1;
-}
-```
-
-### Case Study: Abstractions for Fast Parsing
-[case-study-parsing]: #case-study-abstractions-for-fast-parsing
-Using the core mechanisms of this RFC (along with the proposed [slice-casting extension][ext-slice-casting]) it is trivial to safely define useful zero-copy packet-parsing utilities, like those in the [`zerocopy`] and [`packet`] crates; e.g.:
-```rust
-impl<'a> &'a [u8]
-{
-    /// Read `&T` off the front of `self`, and shrink the underlying slice.
-    /// Analogous to:
-    ///   - https://fuchsia-docs.firebaseapp.com/rust/packet/trait.BufferView.html#method.peek_obj_front
-    ///   - https://fuchsia-docs.firebaseapp.com/rust/packet/trait.BufferView.html#method.take_obj_front
-    fn take_front<'t, T>(&'a mut self) -> Option<&'a T>
-    where
-        Self: CastInto<&'a [T]>,
-    {
-        let idx = size_of::<T>();
-        let (parsable, remainder) = self.split_at(idx);
-        *self = remainder;
-        parsable.cast_into().first()
-    }
-
-    /// Read `&T` off the back of `self`, and shrink the underlying slice.
-    /// Analogous to:
-    ///   - https://fuchsia-docs.firebaseapp.com/rust/packet/trait.BufferView.html#method.peek_obj_back
-    ///   - https://fuchsia-docs.firebaseapp.com/rust/packet/trait.BufferView.html#method.take_obj_back
-    fn take_back<'t, T>(&'a mut self) -> Option<&'a T>
-    where
-      Self: CastInto<&'a [T]>,
-    {
-        let idx = self.len().saturating_sub(size_of::<T>());
-        let (remainder, parsable) = self.split_at(idx);
-        *self = remainder;
-        parsable.cast_into().first()
-    }
-}
-```
-To parse a `UdpPacket` given a byte slice,  we split the slice into a slice containing first 8 bytes, and the remainder. We then cast the first slice into a reference to a `UdpHeader`. A `UdpPacket`, then, consists of the reference to the `UdpHeader`, and the remainder slice. Concretely:
-```rust
-pub struct UdpPacket<'a> {
-    hdr: &'a UdpHeader,
-    body: &'a [u8],
-}
-
-#[derive(PromiseTransmutableFrom, PromiseTransmutableInto)]
-#[repr(C)]
-struct UdpHeader {
-    src_port: [u8; 2],
-    dst_port: [u8; 2],
-    length:   [u8; 2],
-    checksum: [u8; 2],
-}
-
-impl<'a> UdpPacket<'a> {
-    pub fn parse(mut bytes: &'a [u8]) -> Option<UdpPacket> {
-        Some(UdpPacket { hdr: {bytes.read()?}, body: bytes })
-    }
-}
-```
-While this example is simple, the technique can be [expanded](https://fuchsia-docs.firebaseapp.com/rust/packet_formats/) to arbitrarily complex structures.
-
-### Case Study: Abstractions for Pointer Bitpacking
-[case-study-alignment]: #case-study-abstractions-for-pointer-bitpacking
-
-A [previous motivating example](#expressing-layout-requirements) involved a generic abstraction only usable with types meeting certain layout requirements: pointer bitpacking. Using this RFC's mechanisms, we can require that a reference to a generic type `T` has alignment of at least a given value (e.g., `8`) by first defining a ZST with that alignment:
-```rust
-#[derive(PromiseTransmutableFrom)]
-#[repr(align(8)]
-struct Aligned8;
-```
-and then using this `where` bound:
-```rust
-where
-    &T: TransmuteInto<&Aligned8>
-```
 
 ## Rationale: `TransmuteFrom`/`TransmuteInto`
 
@@ -2447,10 +2192,6 @@ The omission is intentional. The consequences of such an option are suprising in
 # Future possibilities
 [future-possibilities]: #future-possibilities
 
-We divide future possibilities into two categories:
-  - *extensions*, which are highly-developed,
-  - *possibilities*, which sketch an idea.
-
 ## Extension: `PromiseTransmutable` Shorthand
 [extension-promisetransmutable-shorthand]: #extension-promisetransmutable-shorthand
 
@@ -2460,6 +2201,11 @@ See [here](0000-ext-promise-transmutable.md).
 
 See [here](0000-ext-layout-traits.md).
 
+## Extension: Byte Transmutation Traits and Safe Initialization
+[extension-zerocopy]: #extension-byte-transmutation-traits-and-safe-initialization
+
+See [here](0000-ext-byte-transmutation.md).
+
 
 ## Extension: Casting
 [ext-slice-casting]: #extension-casting
@@ -2467,12 +2213,14 @@ See [here](0000-ext-layout-traits.md).
 
 See [here](0000-ext-container-casting.md).
 
+
 ## Extension: `include_data!`
 [future-possibility-include_data]: #Extension-include_data
 
 See [here](0000-ext-include-data.md).
 
-## Possibility: Generic Atomics
+
+## Extension: Generic Atomics
 [future-possibility-generic-atomics]: #possibility-generic-atomics
 
 See [here](0000-ext-generic-atomic.md).
