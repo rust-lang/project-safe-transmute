@@ -1121,7 +1121,7 @@ This initial smart implementation may be made simpler by:
   - simplifying constructability
 
 #### Simplifying Constructability
-The safety property of constructability defined in the guidance-level examplation of this RFC describes a platonic ideal of the property. 
+The safety property of constructability defined in the guidance-level explanation of this RFC describes a platonic ideal of the property.
 
 However, we recognize that this definition poses implementation challenges: In our definition of constructability, answering the question of whether a struct or enum variant is constructible depends on *where* that question is being asked. Consequently, answering whether a given type `Src` is `TransmutableInto` a given type `Dst` will depend on *where* that question is posed.
 
@@ -1362,16 +1362,62 @@ We could not identify any advantages to representing options with const-generics
 
 
 ## Rationale: Stability
-### Distinguishing Stability from Possibility
-[Prior art][mechanism-manual] which requires an author's manual implementation of conversion traits conflates stability with possibility; i.e., there may be types for which a transmutation is known to be valid for which the authors do not implement the required traits for safe transmutation. For such types, transmuters must fall all the way back to the *wildly* unsafe `mem::transmute`; there is no middle-ground where transmuters can retain all static guarantees *besides* stability. By distinguishing possibility from stability, our proposal provides this middle ground.
 
-### Distinguishing Stability from `#[repr(C)]`
-In our proposal, `#[repr(C)]` does not connote any promises of layout stability for SemVer purposes. It's [been suggested](https://rust-lang.zulipchat.com/#narrow/stream/216762-project-safe-transmute/topic/RFC.3A.20Stability.20Declaration.20Traits/near/204011238) that the presence of `#[repr(C)]` *already* connotes total layout stability; if so, explicit stability declaration traits are superfluous. However, we are unaware of any documentation indicating that `#[repr(C)]` carries this implication. (It's also [been suggested](https://rust-lang.zulipchat.com/#narrow/stream/216762-project-safe-transmute/topic/typic/near/201165897) that `#[repr(C)]` should *not* connote stability, because that would pose a stability hazard. We agree with this assessment.)
+### Why do we need a stability system?
 
-### Permitting Granular Stability Declarations
-The [stability declaration traits][stability] permit granular and incomplete promises of layout stability (e.g., guaranteeing the size and validity qualities of a type, but *not* its alignment. An alternative formulation of stability might be all-or-nothing (i.e., equivalent to only being able to write `Archetype = Self`). However, members of the safe-transmute working group have [expressed](https://rust-lang.zulipchat.com/#narrow/stream/216762-project-safe-transmute/topic/Transmutability.20Intrinsic/near/202712834) an interest in granular stability declarations.
+At least two requirements necessitate the presence of a stability system:
 
-Our proposed API supports complex, granular stability declarations, all-the-while retaining simplicity in simple use-cases (namely, one can simply the stability declaration traits). 
+#### Mitigating a Unique Stability Hazard
+The usual rules of SemVer stability dictate that if a trait is is implemented in a version `m.a.b`, it will *continue* to be implemented for all versions `m.x.y`, where `x ≥ a` and `y ≥ b`. **`TransmuteFrom<Src, NeglectStability>` is the exception to this rule**. It would be irresponsible to do nothing to mitigate this stability hazard.
+
+The compromise made by this RFC is that **`TransmuteFrom` should be stable-by-default**:
+  - `Dst: TransmuteFrom<Src>` follows the usual SemVer rules,
+  - `Dst: TransmuteFrom<Src, NeglectStability>` *does not*.
+
+#### Mitigating a Possible Safety Hazard
+The [simplified formulation of constructability](#simplifying-constructability) provides an initially-simpler implementation path at the cost of a soundness hole. There are three possible mitigations:
+  - *Pretend it does not exist.* Intentional soundness holes would not bode well for this RFC's acceptance.
+  - *Only provide unsafe transmutation; not safe transmutation.* This option fails to remove any `unsafe` blocks from end-users' code.
+  - *Allow safe transmutations only when the type authors have promised they will not create a situation that would compromise safety.* **We recommend this option.**
+
+This promise is inherently one of stability—the type author is vowing that they will not change the implementation of their type in a way that violates the no-pub-in-priv safety invariant of safe transmutation.
+
+
+### Why this *particular* stability system?
+The proposed stability system is both simple, flexible, and extensible. Whereas ensuring the soundness and safety of `TransmuteFrom<Src, NeglectStability>` requires non-trivial compiler support, stability does not—it is realized as merely two normal traits and an `impl`:
+```rust
+pub trait PromiseTransmutableFrom
+{
+    type Archetype
+        : TransmuteInto<Self, NeglectStability>
+        + PromiseTransmutableFrom;
+}
+
+pub trait PromiseTransmutableInto
+{
+    type Archetype
+        : TransmuteFrom<Self, NeglectStability>
+        + PromiseTransmutableInto;
+}
+
+unsafe impl<Src, Dst> TransmuteFrom<Src, ()> for Dst
+where
+    Src: PromiseTransmutableInto,
+    Dst: PromiseTransmutableFrom,
+
+    <Dst as PromiseTransmutableFrom>::Archetype:
+        TransmuteFrom<
+            <Src as PromiseTransmutableInto>::Archetype,
+            NeglectStability>
+{}
+```
+This formulation is flexible: by writing custom `Archetype`s, the [stability declaration traits][stability] make possible granular and incomplete promises of layout stability (e.g., guaranteeing the size and validity qualities of a type, but *not* its alignment. Members of the safe-transmute working group have [expressed](https://rust-lang.zulipchat.com/#narrow/stream/216762-project-safe-transmute/topic/Transmutability.20Intrinsic/near/202712834) an interest in granular stability declarations.
+
+Finally, this formulation is extensible. The range of advance use-cases permitted by these traits is constrained only by the set of possible `Archetype`s, which, in turn, is constrained by the completeness of `TransmuteFrom`. As the implementation of `TransmuteFrom` becomes more complete, so too will the range of advance use-cases accommodated by these traits.
+
+
+### Couldn't `#[repr(C)]` denote stability?
+In our proposal, `#[repr(C)]` does not connote any promises of transmutation stability for SemVer purposes. It has [been suggested](https://rust-lang.zulipchat.com/#narrow/stream/216762-project-safe-transmute/topic/RFC.3A.20Stability.20Declaration.20Traits/near/204011238) that the presence of `#[repr(C)]` *already* connotes total transmutation stability; i.e., that the type's author promises that the type's size and alignment and bit-validity will remain static. If this is true, then an additional stability mechanism is perhaps superfluous. However, we are unaware of any authoritative documentation indicating that `#[repr(C)]` carries this implication. Treating `#[repr(C)]` as an indicator of transmutation stability [would](https://rust-lang.zulipchat.com/#narrow/stream/216762-project-safe-transmute/topic/typic/near/201165897) thus pose a stability hazard.
 
 
 ## Alternative: Implementing this RFC in a Crate
