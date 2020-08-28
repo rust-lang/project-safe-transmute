@@ -81,10 +81,12 @@ The mechanisms proposed by the RFC enable this, see [here](0000-ext-layout-trait
 ## Terminology & Concepts
 
 ### 📖 Transmutation
-**Transmutation** is the act of reinterpreting the bytes corresponding to a value of one type as if they corresponded to a different type. Concretely:
+**Transmutation** is the act of reinterpreting the bytes corresponding to a value of one type as if they corresponded to a different type. Concretely, we mean the behavior of this function:
 ```
+#[inline(always)]
 unsafe fn transmute<Src, Dst>(src: Src) -> Dst
 {
+    #[repr(C)]
     union Transmute<Src, Dst> {
         src: ManuallyDrop<Src>,
         dst: ManuallyDrop<Dst>,
@@ -575,6 +577,7 @@ where
     {
         use core::mem::ManuallyDrop;
 
+        #[repr(C)]
         union Transmute<Src, Dst> {
             src: ManuallyDrop<Src>,
             dst: ManuallyDrop<Dst>,
@@ -791,7 +794,7 @@ This [minimal implementation][minimal-impl] is sufficient for convincing the com
 
 ### Listing for Initial, Minimal Implementation
 [minimal-impl]: #Listing-for-Initial-Minimal-Implementation
-This listing is both a minimal implementation of this RFC (excepting the automatic derives) and the **canonical specification** of this RFC's API surface ([playground](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2018&gist=32a32adf2de2adf47d79edf4463bae47)):
+This listing is both a minimal implementation of this RFC (excepting the automatic derives) and the **canonical specification** of this RFC's API surface ([playground](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2018&gist=22a5ae2d502ede826392ea4044d48b84)):
 ```rust
 #![feature(untagged_unions,const_fn,const_fn_union)] // for the impl of transmute free functions
 #![feature(const_generics)] // for stability declarations on `[T; N]`
@@ -828,6 +831,7 @@ pub mod transmute {
     {
         use core::mem::ManuallyDrop;
 
+        #[repr(C)]
         union Transmute<Src, Dst> {
             src: ManuallyDrop<Src>,
             dst: ManuallyDrop<Dst>,
