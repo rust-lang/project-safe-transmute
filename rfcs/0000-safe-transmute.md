@@ -559,11 +559,15 @@ where
         Self: Sized,
         Neglect: TransmuteOptions,
     {
-        use core::{mem, ptr};
+        use core::mem::ManuallyDrop;
+
+        union Transmute<Src, Dst> {
+            src: ManuallyDrop<Src>,
+            dst: ManuallyDrop<Dst>,
+        }
+
         unsafe {
-            let dst = ptr::read_unaligned(&src as *const Src as *const Self);
-            mem::forget(src);
-            dst
+            ManuallyDrop::into_inner(Transmute { src: ManuallyDrop::new(src) }.dst)
         }
     }
 }
@@ -773,8 +777,9 @@ This [minimal implementation][minimal-impl] is sufficient for convincing the com
 
 ### Listing for Initial, Minimal Implementation
 [minimal-impl]: #Listing-for-Initial-Minimal-Implementation
-This listing is both a minimal-viable implementation of this RFC (excepting the automatic derives) and the **canonical specification** of this RFC's API surface ([playground](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2018&gist=dee36fb5231c9e00b03b424e204cd1a9)):
+This listing is both a minimal implementation of this RFC (excepting the automatic derives) and the **canonical specification** of this RFC's API surface ([playground](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2018&gist=32a32adf2de2adf47d79edf4463bae47)):
 ```rust
+#![feature(untagged_unions,const_fn,const_fn_union)] // for the impl of transmute free functions
 #![feature(const_generics)] // for stability declarations on `[T; N]`
 #![feature(decl_macro)] // for stub implementations of derives
 #![feature(never_type)] // for stability declarations on `!`
@@ -787,23 +792,36 @@ pub mod transmute {
     use {options::*, stability::*};
 
     /// Reinterprets the bits of a value of one type as another type, safely.
+    ///
+    /// Use `()` for `Neglect` if you do not wish to neglect any static checks.
     #[inline(always)]
-    pub /*const*/ fn safe_transmute<Src, Dst, Neglect>(src: Src) -> Dst
+    pub const fn safe_transmute<Src, Dst, Neglect>(src: Src) -> Dst
     where
-        Src: TransmuteInto<Dst, Neglect>,
+        Dst: TransmuteFrom<Src, Neglect>,
         Neglect: SafeTransmuteOptions
     {
-        src.transmute_into()
+        unsafe { unsafe_transmute::<Src, Dst, Neglect>(src) }
     }
 
     /// Reinterprets the bits of a value of one type as another type, potentially unsafely.
+    ///
+    /// The onus is on you to ensure that calling this method is safe.
     #[inline(always)]
-    pub /*const*/ unsafe fn unsafe_transmute<Src, Dst, Neglect>(src: Src) -> Dst
+    pub const unsafe fn unsafe_transmute<Src, Dst, Neglect>(src: Src) -> Dst
     where
-        Src: TransmuteInto<Dst, Neglect>,
+        Dst: TransmuteFrom<Src, Neglect>,
         Neglect: TransmuteOptions
     {
-        unsafe { src.unsafe_transmute_into() }
+        use core::mem::ManuallyDrop;
+
+        union Transmute<Src, Dst> {
+            src: ManuallyDrop<Src>,
+            dst: ManuallyDrop<Dst>,
+        }
+
+        unsafe {
+            ManuallyDrop::into_inner(Transmute { src: ManuallyDrop::new(src) }.dst)
+        }
     }
 
     /// `Self: TransmuteInto<Dst, Neglect`, if the compiler accepts the stability,
@@ -860,7 +878,6 @@ pub mod transmute {
     /// `Self: TransmuteInto<Src, Neglect`, if the compiler accepts the stability,
     /// safety, and soundness of transmuting `Src` into `Self`, notwithstanding
     /// a given set of static checks to `Neglect`.
-    /* #[lang = "transmute_from"] */
     pub unsafe trait TransmuteFrom<Src: ?Sized, Neglect = ()>
     where
         Neglect: TransmuteOptions,
@@ -873,12 +890,7 @@ pub mod transmute {
             Self: Sized,
             Neglect: SafeTransmuteOptions,
         {
-            use core::{mem, ptr};
-            unsafe {
-                let dst = ptr::read(&src as *const Src as *const Self);
-                mem::forget(src);
-                dst
-            }
+            unsafe { Self::unsafe_transmute_from(src) }
         }
 
         /// Reinterpret the bits of a value of one type as another type, potentially unsafely.
@@ -891,16 +903,12 @@ pub mod transmute {
             Self: Sized,
             Neglect: TransmuteOptions,
         {
-            use core::{mem, ptr};
-            unsafe {
-                let dst = ptr::read_unaligned(&src as *const Src as *const Self);
-                mem::forget(src);
-                dst
-            }
+            unsafe_transmute::<Src, Self, Neglect>(src)
         }
     }
 
     /// A type is always transmutable from itself.
+    // This impl will be replaced with a compiler-supported for arbitrary source and destination types.
     unsafe impl<T> TransmuteFrom<T, NeglectStability> for T {}
 
     /// A type is *stably* transmutable if...
@@ -921,7 +929,6 @@ pub mod transmute {
         use super::{TransmuteFrom, TransmuteInto, options::NeglectStability};
 
         /// Declare that transmuting `Self` into `Archetype` is SemVer-stable.
-        /* #[lang = "promise_transmutable_into"] */
         pub trait PromiseTransmutableInto
         {
             /// The `Archetype` must be safely transmutable from `Self`.
@@ -931,7 +938,6 @@ pub mod transmute {
         }
 
         /// Declare that transmuting `Self` from `Archetype` is SemVer-stable.
-        /* #[lang = "promise_transmutable_from"] */
         pub trait PromiseTransmutableFrom
         {
             /// The `Archetype` must be safely transmutable into `Self`.
@@ -1104,30 +1110,20 @@ pub mod transmute {
     pub mod options {
 
         /// Options that may be used with safe transmutations.
-        pub trait SafeTransmuteOptions: TransmuteOptions
-        {}
+        pub trait SafeTransmuteOptions: TransmuteOptions {}
 
         /// Options that may be used with unsafe transmutations.
-        pub trait TransmuteOptions: private::Sealed
-        {}
+        pub trait TransmuteOptions: private::Sealed {}
 
         impl SafeTransmuteOptions for () {}
         impl TransmuteOptions for () {}
 
         /// Neglect the stability check of `TransmuteFrom`.
-        /* #[lang = "neglect_stability"] */
         pub struct NeglectStability;
 
         // Uncomment this if/when constructibility is fully implemented:
         // impl SafeTransmuteOptions for NeglectStability {}
         impl TransmuteOptions for NeglectStability {}
-
-        /*
-        pub struct NeglectAlignment;
-        impl TransmuteOptions for NeglectAlignment {}
-        */
-
-        /* FILL: Implementations for tuple combinations of options */
 
         // prevent third-party implementations of `TransmuteOptions`
         mod private {
@@ -1137,9 +1133,6 @@ pub mod transmute {
 
             impl Sealed for () {}
             impl Sealed for NeglectStability {}
-            /* impl Sealed for NeglectAlignment {} */
-
-            /* FILL: Implementations for tuple combinations of options */
         }
     }
 }
