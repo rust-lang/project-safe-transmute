@@ -71,7 +71,7 @@ This RFC proposes simple-but-powerful [mechanisms][stability] for declaring layo
 ## Expressing Layout Requirements
 Similarly, there is no canonical way for crate authors to declare the layout requirements of generic abstractions over types that have certain layout properties. 
 
-For instance, a common bit-packing technique involves abusing the relationship between allocations and alignment. If a type is aligned to 2<sup>n</sup>, then the *n* least significant bits of pointers to that type will equal `0`. These known-zero bits can be packed with data. Since alignment cannot be currently reasoned about at the type-level, it's currently impossible to bound instantiations of a generic parameter based on minimum alignment.
+For instance, a common bit-packing technique involves using the relationship between allocations and alignment. If a type is aligned to 2<sup>n</sup>, then the *n* least significant bits of pointers to that type will equal `0`. These known-zero bits can be packed with data. Since alignment cannot be currently reasoned about at the type-level, it's currently impossible to bound instantiations of a generic parameter based on minimum alignment.
 
 The mechanisms proposed by the RFC enable this, see [here](0000-ext-layout-traits.md).
 
