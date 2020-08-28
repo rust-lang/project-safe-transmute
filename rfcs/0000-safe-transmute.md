@@ -1265,6 +1265,7 @@ If and when the implementation of `TransmuteFrom` encodes our complete definitio
 ## No Notion of Platform Stability
 The stability declaration traits communicate library layout stability, but not *platform* layout stability. A transmutation is platform-stable if it compiling one one platform implies it will compile on all other platforms. Unfortunately, platform-unstable types are common;  e.g.:
 
+- All primitive number types have platform-dependent [endianness](https://en.wikipedia.org/wiki/Endianness).
 - All pointer-related primitive types (`usize`, `isize`, `*const T`, `*mut T`, `&T`, `&mut T`) possess platform-dependent layouts; their sizes and alignments are well-defined, but vary between platforms. Concretely, whether `usize` is `TransmuteInto<[u8; 4]>` or `TransmuteInto<[u8; 8]>` will depend on  the platform.
 - The very existence of some types depends on platform, too; e.g., the contents of [`core::arch`](https://doc.rust-lang.org/stable/core/arch/), [`std::os`](https://doc.rust-lang.org/stable/std/os/), and [`core::sync::atomic`](https://doc.rust-lang.org/stable/std/sync/atomic/) all depend on platform.
 
@@ -1298,7 +1299,7 @@ The issues of platform layout stability exposed by this RFC are not fundamentall
 
 The model of stability proposed by this RFC frames stability as a quality of *safe* transmutations. A type author cannot specify stability archetypes for *unsafe* transmutations, and it is reasonable to want to do so.
 
-To accomodate this, we may modify the definitions of `PromiseTransmutableFrom` and `PromiseTransmutableInto` to consume an optional `Neglect` parameter, to allow for stability declarations for unsafe transmutations:
+To accommodate this, we may modify the definitions of `PromiseTransmutableFrom` and `PromiseTransmutableInto` to consume an optional `Neglect` parameter, to allow for stability declarations for unsafe transmutations:
 ```rust
 pub trait PromiseTransmutableFrom<Neglect = ()>
 where
