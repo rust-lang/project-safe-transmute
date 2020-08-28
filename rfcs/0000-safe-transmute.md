@@ -499,7 +499,7 @@ However, if you anticipate that you will need to make changes to your type's lay
 struct FooArchetype(pub [MaybeUninit<u8>; 5]);
 
 impl PromiseTransmutableInto for Foo {
-    type Type = [MaybeUninit<u8>; 5];
+    type Archetype = [MaybeUninit<u8>; 5];
 }
 ```
 
@@ -1556,7 +1556,7 @@ enum Boolean {
 }
 
 unsafe impl PromiseTransmutableInto for Boolean {
-    type Type = u8;
+    type Archetype = u8;
 }
 ```
 
