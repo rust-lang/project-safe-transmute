@@ -82,7 +82,7 @@ The mechanisms proposed by the RFC enable this, see [here](0000-ext-layout-trait
 
 ### 📖 Transmutation
 **Transmutation** is the act of reinterpreting the bytes corresponding to a value of one type as if they corresponded to a different type. Concretely, we mean the behavior of this function:
-```
+```rust
 #[inline(always)]
 unsafe fn transmute<Src, Dst>(src: Src) -> Dst
 {
