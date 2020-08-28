@@ -81,7 +81,21 @@ The mechanisms proposed by the RFC enable this, see [here](0000-ext-layout-trait
 ## Terminology & Concepts
 
 ### 📖 Transmutation
-**Transmutation** is the act of reinterpreting the bytes corresponding to a value of one type as if they corresponded to a different type.
+**Transmutation** is the act of reinterpreting the bytes corresponding to a value of one type as if they corresponded to a different type. Concretely:
+```
+unsafe fn transmute<Src, Dst>(src: Src) -> Dst
+{
+    union Transmute<Src, Dst> {
+        src: ManuallyDrop<Src>,
+        dst: ManuallyDrop<Dst>,
+    }
+
+    ManuallyDrop::into_inner(Transmute { src: ManuallyDrop::new(src) }.dst)
+}
+```
+
+### 📖 Safer Transmutation
+By **safer transmutation** we mean: *what `where` bound could we add to `transmute` restricts its type parameters `Src` and `Dst` in ways that statically limit the function's misuse?* Our answer to this question will ensure that transmutations are, by default, *sound*, *safe* and *stable*.
 
 ### 📖 Soundness
 A transmutation is ***sound*** if the mere act of transmuting a value from one type to another is not compiler undefined behavior.
