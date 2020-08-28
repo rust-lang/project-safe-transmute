@@ -501,52 +501,6 @@ const _: () = {
 ```
 Since deriving *both* of these traits together is, by far, the most common use-case, we [propose][extension-promisetransmutable-shorthand] `#[derive(PromiseTransmutable)]` as an ergonomic shortcut.
 
-#### Uncommon Use-Case: Weak Stability Guarantees
-[stability-uncommon]: #uncommon-use-case-weak-stability-guarantees
-
-If you are *most people* and want to declare your types as layout-stable, you should follow the advice in the previous sections. In doing so, you declare that you will *not* modify the layout of your type in virtually any way, except as a breaking change. If your type's fields have simple stability guarantees, this effects the strongest possible declaration of stability: it declares that *all* transmutations that are safe are *also* stable.
-
-However, if you anticipate that you will need to make changes to your type's layouts in a non-breaking way, you can craft uninformative archetypes that effect *weaker* promises of stability. With uninformative archetypes, only a *subset* of transmutations that are safe are also considered stable. For instance, you may use `PromiseTransmutableInto` to specify an lower-bound for the size of a type, but *not* make promises about its bit-validity:
-
-```rust
-#[repr(C)] pub struct Foo(u8, u8, u8, u8, u8, u8);
-
-#[repr(C)]
-struct FooArchetype(pub [MaybeUninit<u8>; 5]);
-
-impl PromiseTransmutableInto for Foo {
-    type Archetype = [MaybeUninit<u8>; 5];
-}
-```
-
-##### Crafting Uninformative `PromiseTransmutableFrom` Archetypes
-
-###### Archetype Alignment
-You may freely decrease the required alignment of your type to any value less-than-or-equal to the required alignment of your archetype. The maximum alignment requirement permitted by Rust is 2<sup>29</sup>.
-
-###### Archetype Size
-You may decrease the size of your type without violating stability to any size less-than-or-equal to the size of your archetype. Unfortunately, the maximum size of types in Rust is [architecture-dependent](https://github.com/rust-lang/rust/blob/63b441aafbf52d6ba789ecc478455800c1a48df9/src/librustc_target/abi/mod.rs#L179-L197). For the greatest portability, your archetype should be no larger than 2<sup>15</sup>. An archetype of this size provides (un)reasonable future flexibility.
-
-###### Archetype Validity & Visibility
-You may freely make your type *less* constructible (in terms of both theoretical validity and constructor visibility) than your archetype.
-
-A minimally-informative archetype may be constructed using this as a building-block:
-```rust
-struct None(u8);
-```
-Since the `u8` field is private, its valid values are assumed to be constrained by library invariants.
-
-##### Crafting Uninformative `PromiseTransmutableInto` Archetypes
-
-###### Archetype Alignment
-You may freely increase the required alignment of your type to any value greater-than-or-equal to the required alignment of your archetype. The minimum alignment requirement permitted by Rust is 1.
-
-###### Archetype Size
-You may increase the size of your type without violating stability to any size greater-than-or-equal to the size of your archetype. The minimum size of types in Rust is 0.
-
-###### Archetype Validity & Visibility
-You may freely make your type more constructible (in terms of both visibility and theoretical validity) than your archetype. A minimally-informative archetype may be constructed using `MaybeUninit<u8>` as a building-block, since *any* possible instantiation of a byte is a valid instantiation of `MaybeUninit<u8>`.
-
 
 ## Mechanisms of Transmutation
 
