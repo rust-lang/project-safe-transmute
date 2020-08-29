@@ -100,7 +100,7 @@ unsafe fn transmute<Src, Dst>(src: Src) -> Dst
 By **safer transmutation** we mean: *what `where` bound could we add to `transmute` restricts its type parameters `Src` and `Dst` in ways that statically limit the function's misuse?* Our answer to this question will ensure that transmutations are, by default, *sound*, *safe* and *stable*.
 
 ### 📖 Soundness
-A transmutation is ***sound*** if the mere act of transmuting a value from one type to another is not compiler undefined behavior.
+A transmutation is ***sound*** if the mere act of transmuting a value from one type to another is not unspecified or undefined behavior.
 
 ### 📖 Safety
 A sound transmutation is ***safe*** if *using* the transmuted value cannot violate memory safety.
@@ -115,7 +115,7 @@ A safe transmutation is ***stable*** if the authors of the source type and desti
 
 ### 📖 When is a transmutation sound?
 [sound transmutation]: #-when-is-a-transmutation-sound
-A transmutation is ***sound*** if the mere act of transmuting a value from one type to another is not undefined behavior.
+A transmutation is ***sound*** if the mere act of transmuting a value from one type to another is not unspecified or undefined behavior.
 
 #### Well-Defined Representation
 [`u8`]: core::u8
