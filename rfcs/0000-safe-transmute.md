@@ -438,23 +438,25 @@ By implementing `PromiseTransmutableFrom`, you promise that your type is guarant
 You are free to change the layout of your type however you like between minor crate versions so long as that change does not violates these promises. These two traits are capable of expressing simple and complex stability guarantees.
 
 #### Stability & Transmutation
-A `Src` type is *stably* transmutable into a `Dst` type *only if* `<Src as PromiseTransmutableInto>::Archetype` is transmutable, stability notwithstanding, into `<Dst as PromiseTransmutableFrom>::Archetype`; formally:
+Together with the `PromiseTransmutableFrom` and `PromiseTransmutableInto` traits, this impl of `TransmuteFrom` constitutes the formal definition of transmutation stability:
 ```rust
 unsafe impl<Src, Dst> TransmuteFrom<Src> for Dst
 where
     Src: PromiseTransmutableInto,
     Dst: PromiseTransmutableFrom,
-    <Dst as PromiseTransmutableFrom>::Archetype:
-        TransmuteFrom<
-            <Src as PromiseTransmutableInto>::Archetype,
-            NeglectStability
-        >
+
+    Dst::Archetype: TransmuteFrom<Src::Archetype, NeglectStability>
 {}
 ```
+Why is this safe? Can we really safely judge whether `Dst` is transmutable from `Src` by assessing the transmutability of two different types? Yes! Transmutability is *transitive*. Concretely, if we can safely transmute:
+  - `Src` to `Src::Archetype` (enforced by `Src: PromiseTransmutableInto`), and
+  - `Dst::Archetype` to `Dst` (enforced by `Dst: PromiseTransmutableFrom`), and
+  - `Src::Archetype` to `Dst::Archetype` (enforced by `Dst::Archetype: TransmuteFrom<Src::Archetype, NeglectStability>`),
 
-Why is this the case?
-
-The type `<Src as PromiseTransmutableInto>::Archetype` exemplifies the furthest extreme of non-breaking changes that could be made to the layout of `Src` that could affect its use as a source type in transmutations. Conversely, `<Dst as PromiseTransmutableFrom>::Archetype` exemplifies the furthest extreme of non-breaking changes that could be made to the layout of `Dst` that could affect its use as a destination type in transmutations. If a transmutation between these extremities is valid, then so is `Src: TransmuteInto<Dst>`.
+...then it follows that we can safely transmute `Src` to `Dst` in three steps:
+  1. we transmute `Src` to `Src::Archetype`,
+  2. we transmute `Src::Archetype` to `Dst::Archetype`,
+  3. we transmute `Dst::Archetype` to `Dst`.
 
 #### Common Use-Case: As-Stable-As-Possible
 [stability-common]: #common-use-case-as-stable-as-possible
@@ -479,6 +481,10 @@ const _: () = {
         pub <Baz as PromiseTransmutableFrom>::Archetype,
     );
 
+    impl PromiseTransmutableFrom for TransmutableFromArchetype {
+        type Archetype = Self;
+    }
+
     impl PromiseTransmutableFrom for Foo {
         type Archetype = TransmutableFromArchetype;
     }
@@ -494,12 +500,67 @@ const _: () = {
         pub <Baz as PromiseTransmutableInto>::Archetype,
     );
 
+    impl PromiseTransmutableFrom for TransmutableIntoArchetype {
+        type Archetype = Self;
+    }
+
     impl PromiseTransmutableInto for Foo {
         type Archetype = TransmutableIntoArchetype;
     }
 };
 ```
 Since deriving *both* of these traits together is, by far, the most common use-case, we [propose][extension-promisetransmutable-shorthand] `#[derive(PromiseTransmutable)]` as an ergonomic shortcut.
+
+
+#### Uncommon Use-Case: Weak Stability Guarantees
+[stability-uncommon]: #uncommon-use-case-weak-stability-guarantees
+
+We also can specify *custom* `Archetype`s to finely constrain the set of transmutations we are willing to make stability promises for. Consider, for instance, if we want to leave ourselves the future leeway to change the alignment of a type `Foo` without making a SemVer major change:
+```rust
+#[repr(C)]
+pub struct Foo(pub Bar, pub Baz);
+```
+The alignment of `Foo` affects transmutability of `&Foo`. A `&Foo` cannot be safely transmuted from a `&Bar` if the alignment requirements of `Foo` exceed those of `Bar`. If we don't want to promise that `&Foo` is stably transmutable from virtually *any* `Bar`, we simply make `Foo`'s `PromiseTransmutableFrom::Archetype` a type with maximally strict alignment requirements:
+```rust
+const _: () = {
+    use core::transmute::stability::PromiseTransmutableFrom;
+
+    #[repr(C, align(536870912))]
+    pub struct TransmutableFromArchetype(
+        pub <Bar as PromiseTransmutableFrom>::Archetype,
+        pub <Baz as PromiseTransmutableFrom>::Archetype,
+    );
+
+    impl PromiseTransmutableFrom for TransmutableFromArchetype {
+        type Archetype = Self;
+    }
+
+    impl PromiseTransmutableFrom for Foo {
+        type Archetype = TransmutableFromArchetype;
+    }
+};
+```
+Conversely, a `&Foo` cannot be safely transmuted *into* a `&Bar` if the alignment requirements of `Bar` exceed those of `Foo`. We reduce this set of stable transmutations by making `PromiseTransmutableFrom::Archetype` a type with minimal alignment requirements:
+```rust
+const _: () = {
+    use core::transmute::stability::PromiseTransmutableInto;
+
+    #[repr(C, packed(1))]
+    pub struct TransmutableIntoArchetype(
+        pub <Bar as PromiseTransmutableFrom>::Archetype,
+        pub <Baz as PromiseTransmutableFrom>::Archetype,
+    );
+
+    impl PromiseTransmutableInto for TransmutableIntoArchetype {
+        type Archetype = Self;
+    }
+
+    impl PromiseTransmutableInto for Foo {
+        type Archetype = TransmutableIntoArchetype;
+    }
+};
+```
+Given these two stability promises, we are free to modify the alignment of `Foo` in SemVer-minor changes without running any risk of breaking dependent crates.
 
 
 ## Mechanisms of Transmutation
@@ -1385,33 +1446,8 @@ This promise is inherently one of stability—the type author is vowing that the
 
 
 ### Why this *particular* stability system?
-The proposed stability system is both simple, flexible, and extensible. Whereas ensuring the soundness and safety of `TransmuteFrom<Src, NeglectStability>` requires non-trivial compiler support, stability does not—it is realized as merely two normal traits and an `impl`:
-```rust
-pub trait PromiseTransmutableFrom
-{
-    type Archetype
-        : TransmuteInto<Self, NeglectStability>
-        + PromiseTransmutableFrom;
-}
+The proposed stability system is both simple, flexible, and extensible. Whereas ensuring the soundness and safety of `TransmuteFrom<Src, NeglectStability>` requires non-trivial compiler support, stability does not—it is realized as merely two normal traits and an `impl`.
 
-pub trait PromiseTransmutableInto
-{
-    type Archetype
-        : TransmuteFrom<Self, NeglectStability>
-        + PromiseTransmutableInto;
-}
-
-unsafe impl<Src, Dst> TransmuteFrom<Src, ()> for Dst
-where
-    Src: PromiseTransmutableInto,
-    Dst: PromiseTransmutableFrom,
-
-    <Dst as PromiseTransmutableFrom>::Archetype:
-        TransmuteFrom<
-            <Src as PromiseTransmutableInto>::Archetype,
-            NeglectStability>
-{}
-```
 This formulation is flexible: by writing custom `Archetype`s, the [stability declaration traits][stability] make possible granular and incomplete promises of layout stability (e.g., guaranteeing the size and validity qualities of a type, but *not* its alignment. Members of the safe-transmute working group have [expressed](https://rust-lang.zulipchat.com/#narrow/stream/216762-project-safe-transmute/topic/Transmutability.20Intrinsic/near/202712834) an interest in granular stability declarations.
 
 Finally, this formulation is extensible. The range of advance use-cases permitted by these traits is constrained only by the set of possible `Archetype`s, which, in turn, is constrained by the completeness of `TransmuteFrom`. As the implementation of `TransmuteFrom` becomes more complete, so too will the range of advance use-cases accommodated by these traits.
@@ -1695,6 +1731,6 @@ See [here](0000-ext-include-data.md).
 
 
 ## Extension: Generic Atomics
-[future-possibility-generic-atomics]: #possibility-generic-atomics
+[future-possibility-generic-atomics]: #extension-generic-atomics
 
 See [here](0000-ext-generic-atomic.md).
