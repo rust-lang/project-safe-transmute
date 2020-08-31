@@ -548,8 +548,8 @@ const _: () = {
 
     #[repr(C, packed(1))]
     pub struct TransmutableIntoArchetype(
-        pub <Bar as PromiseTransmutableFrom>::Archetype,
-        pub <Baz as PromiseTransmutableFrom>::Archetype,
+        pub <Bar as TransmutableIntoArchetype>::Archetype,
+        pub <Baz as TransmutableIntoArchetype>::Archetype,
     );
 
     impl PromiseTransmutableInto for TransmutableIntoArchetype {
