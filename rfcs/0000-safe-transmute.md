@@ -1743,9 +1743,9 @@ See [here](0000-ext-layout-traits.md).
 See [here](0000-ext-byte-transmutation.md).
 
 
-## Extension: Casting
-[ext-slice-casting]: #extension-casting
-[ext-vec-casting]: #extension-casting
+## Extension: Slice and `Vec` Casting
+[ext-slice-casting]: #extension-slice-and-vec-casting
+[ext-vec-casting]: #extension-slice-and-vec-casting
 
 See [here](0000-ext-container-casting.md).
 
