@@ -34,6 +34,7 @@ let _ : u32 = Foo(16, 12).transmute_into(); // Compile Error!
 //    |                           ^^^^^^^^^^^^^^ the trait `TransmuteFrom<foo::Foo, _>` is not implemented for `u32`
 //    |
 //   = note: required because of the requirements on the impl of `TransmuteInto<u32, _>` for `foo::Foo`
+//   = note: byte 8 of the source type may be uninitialized; byte 8 of the destination type cannot be uninitialized.
 ```
 
 
