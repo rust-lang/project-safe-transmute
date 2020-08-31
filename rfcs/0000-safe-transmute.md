@@ -1495,10 +1495,10 @@ Finally, community-led, crate-based approaches are, inescapably, unauthoritative
 [2019-12-05-v2]: https://internals.rust-lang.org/t/pre-rfc-v2-safe-transmute/11431
 [2020-07]: https://internals.rust-lang.org/t/pre-rfc-explicit-opt-in-oibit-for-truly-pod-data-and-safe-transmutes/2361
 
-## Dimensions of Variation
-[dimensions-of-variation]: #dimensions-of-variation
+## Prior Art: Rust
+[prior-art-rust]: #prior-art-rust
 
-A handful of dimensions of variation charactarize the distinctions between prior art:
+A handful of dimensions of variation characterize the distinctions between prior art in Rust:
   - conversion complexity
   - conversion fallibility
   - source and destination types supported
@@ -1518,7 +1518,7 @@ The signal and transmutability and mechanism are, in principle, separable. The [
 Prior work differs in whether it supports only infallible conversions, or fallible conversions, too. The [convute][crate-convute] crate's [`TryTransmute<T>`](https://docs.rs/convute/0.2.0/convute/marker/trait.TryTransmute.html) trait provides a method, `can_transmute`, that returns true a transmutation from `Self` to `T` is valid for a particular value of `&self`. An early version of [typic][crate-typic] abstracted a similar mechanism into an [`Invariants`](https://docs.rs/typic/0.1.0/typic/transmute/trait.Invariants.html) trait, with additional facilities for error reporting. [*Draft-RFC: `Compatible`/`TryCompatible`*][2019-12-05-gnzlbg] employs a similar mechanism to typic.
 
 Typic removed support for fallible transmutation after reckoning with several challenges:
-- The causes of uncertain failure could be languaged-imposed (e.g., alignment or validity requirements), or library imposed (i.e., invariants placed on a structure's private fields).
+- The causes of uncertain failure could be language-imposed (e.g., alignment or validity requirements), or library imposed (i.e., invariants placed on a structure's private fields).
 - The points of uncertain failures could be arbitrarily 'deep' into the fields of a type.
 - Error reporting incurs a runtime cost commensurate with the detail of the reporting, but the detail of reporting required by end-user depends on use-case, not just type. For instance: for some use-cases it may be necessary to know where and why a byte was not a valid `bool`; in others it may be sufficient to know simply *whether* an error occurred.
 
@@ -1641,7 +1641,6 @@ We believe that the implementation burden these approaches place on end-users, a
 - These approaches conflate transmutation stability with transmutation safety. An end-user wishing to transmute a type for which its author has *not* manually implemented the applicable traits must resort to the wildly unsafe `mem::transmute`.
 
 
-
 #### Automatic
 Automatic approaches implement the transmutation traits without user intervention, whenever it is sound to do so. This is the approach taken by our RFC. Automatic mechanisms appear in at least four prior language proposals:
 - [*Pre-RFC: Safe coercions*][2017-02]
@@ -1670,6 +1669,32 @@ Our RFC exploits the related concept of *constructability*, which is a property 
 The simplified definition of *constructability* we propose is the same employed by [typic][crate-typic] (which uses the term "visibility"). [Typic][crate-typic] regards the pub-in-priv soundness hole of the simplified definition to be sufficiently niche that `NeglectStability` remains "safe". However, unlike [typic][crate-typic], we believe that this simplified definition imposes a safety hazard substantial enough to warrant making `NeglectStability` initially usable with *only* unsafe transmutes.
 
 Our RFC separates *constructability*, which concerns what aspects of a type's structure are part of its public API, and *stability*, which concerns the aspects of a type's layout that are part of its public API for SemVer purposes. This distinction does not appear in prior work.
+
+
+## Prior Art: Haskell
+
+Haskell's [`Coercible`](https://hackage.haskell.org/package/base-4.14.0.0/docs/Data-Coerce.html#t:Coercible) typeclass is implemented for all types `A` and `B` when the compiler can infer that they have the same representation. As with our proposal's `TransmuteFrom` trait, instances of this typeclass are created "on-the-fly" by the compiler. `Coercible` primarily provides a safe means to convert to-and-from newtypes, and does not seek to answer, for instance, if two `u8`s are interchangeable with a `u16`.
+
+Haskell takes an algebraic approach to this problem, reasoning at the level of type definitions, not type layouts. However, not all type parameters have an impact on1 a type's layout; for instance:
+```rust
+#[repr(C)]
+struct Bar<U>(PhantomData<U>);
+
+#[repr(transparent)]
+struct Foo<T, U>(T, Bar<U>);
+```
+`Foo`'s layout is impacted solely by `T`, not `U`, but this isn't necessarily clear by looking at the definition of `Foo`. To reason about these scenarios, Haskell introduces the concept of type parameter [*roles*](https://gitlab.haskell.org/ghc/ghc/-/wikis/roles)—labels that denote the relationship of a type parameter to coercibility.
+
+Our RFC does not need the concept of roles, because it does not attempt to abstractly reason about type definitions. Rather, it reasons about type *layouts*. This example, for instance, does not pose a challenge to our proposal:
+```rust
+trait SomeTrait { type AssociatedType; }
+
+#[repr(C)]
+struct MyStruct<T: SomeTrait>(pub T, pub T::AssociatedType);
+``` 
+For a *particular* `T`, `MyStruct<T>` will have a *particular* layout. Our proposed `TransmuteFrom` trait reasons about the 
+*layouts* of types (which are fully concrete), not the *definitions* (which may be somewhat abstract).
+
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
