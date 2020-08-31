@@ -418,17 +418,17 @@ The question is, then: *how can the author of a type reason about transmutations
 You may declare the stability guarantees of your type by implementing one or both of two traits:
 ```rust
 pub trait PromiseTransmutableFrom
+where
+    Self::Archetype: PromiseTransmutableFrom
 {
-    type Archetype
-        : TransmuteInto<Self, NeglectStability>
-        + PromiseTransmutableFrom;
+    type Archetype: TransmuteInto<Self, NeglectStability>
 }
 
 pub trait PromiseTransmutableInto
+where
+    Self::Archetype: PromiseTransmutableInto,
 {
-    type Archetype
-        : TransmuteFrom<Self, NeglectStability>
-        + PromiseTransmutableInto;
+    type Archetype: TransmuteFrom<Self, NeglectStability>
 }
 ```
 
@@ -810,13 +810,13 @@ This [minimal implementation][minimal-impl] is sufficient for convincing the com
 
 ### Listing for Initial, Minimal Implementation
 [minimal-impl]: #Listing-for-Initial-Minimal-Implementation
-This listing is both a minimal implementation of this RFC (excepting the automatic derives) and the **canonical specification** of this RFC's API surface ([playground](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2018&gist=22a5ae2d502ede826392ea4044d48b84)):
+This listing is both a minimal implementation of this RFC (excepting the automatic derives) and the **canonical specification** of this RFC's API surface ([playground](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2018&gist=1ff1700e6dba595f1e600d20da5d6387)):
 ```rust
 #![feature(untagged_unions,const_fn,const_fn_union)] // for the impl of transmute free functions
 #![feature(const_generics)] // for stability declarations on `[T; N]`
 #![feature(decl_macro)] // for stub implementations of derives
 #![feature(never_type)] // for stability declarations on `!`
-#![allow(unused_unsafe, incomplete_features)]
+#![allow(warnings)]
 
 /// Transmutation conversions.
 // suggested location: `core::convert`
@@ -964,20 +964,20 @@ pub mod transmute {
 
         /// Declare that transmuting `Self` into `Archetype` is SemVer-stable.
         pub trait PromiseTransmutableInto
+        where
+            Self::Archetype: PromiseTransmutableInto
         {
             /// The `Archetype` must be safely transmutable from `Self`.
-            type Archetype
-                : TransmuteFrom<Self, NeglectStability>
-                + PromiseTransmutableInto;
+            type Archetype: TransmuteFrom<Self, NeglectStability>;
         }
 
         /// Declare that transmuting `Self` from `Archetype` is SemVer-stable.
         pub trait PromiseTransmutableFrom
+        where
+            Self::Archetype: PromiseTransmutableFrom
         {
             /// The `Archetype` must be safely transmutable into `Self`.
-            type Archetype
-                : TransmuteInto<Self, NeglectStability>
-                + PromiseTransmutableFrom;
+            type Archetype: TransmuteInto<Self, NeglectStability>;
         }
 
 
