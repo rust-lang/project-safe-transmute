@@ -12,8 +12,8 @@
 
 This is a **library extension** to [safer transmutation] (i.e., it does not require additional compiler support) which introduces traits encoding common transmutation-conversions: *byte* transmutations:
   - `FromZeros`, implemented if `Self` is initializable from an equivalently-sized array of zeroed bytes.
-  - `FromBytes`, implemented if `Self` is transmutable into an equivalently-sized array of initialized bytes.
-  - `IntoBytes`, implemented if `Self` is transmutable from an equivalently-sized array of initialized bytes.
+  - `FromBytes`, implemented if `Self` is transmutable from an equivalently-sized array of initialized bytes.
+  - `IntoBytes`, implemented if `Self` is transmutable into an equivalently-sized array of initialized bytes.
 
 # Motivation
 [motivation]: #motivation
