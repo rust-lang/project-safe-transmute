@@ -25,7 +25,7 @@ A common bit-packing technique involves abusing the relationship between allocat
 Using [safer transmutation], we can require that a reference to a generic type `T` has alignment of at least a given value (e.g., `8`) by first defining a ZST with that alignment:
 ```rust
 #[derive(PromiseTransmutableFrom)]
-#[repr(align(8)]
+#[repr(align(8))]
 struct Aligned8;
 ```
 and then adding this `where` bound to our abstraction:
@@ -36,9 +36,13 @@ where
 
 The intuition behind this trait bound requires a thorough understanding of transmutability. With this RFC, this bound would be more clearly expressed as:
 ```rust
-#[derive(PromiseTransmutableFrom)]
-#[repr(align(8)]
+#[repr(align(8))]
 struct Aligned8;
+```
+using this where bound:
+```rust
+where
+    Aligned8: mem::AlignLtEq<T>, // Essentially T: AlignGtEq<Aligned8>, but there is no AlignGtEq trait.
 ```
 
 ## `Vec` Casting
